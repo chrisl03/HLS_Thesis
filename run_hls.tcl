@@ -1,51 +1,48 @@
-# 1. Δημιουργία Project
-# Θα δημιουργήσει φάκελο "cong_stencil_project"
+# 1. Create Project
+# This will create a folder named "cong_stencil_project_2"
 open_project -reset cong_stencil_project_2
 
-# 2. Προσθήκη Αρχείων
-# ΠΡΟΣΟΧΗ: Βεβαιώσου ότι τα αρχεία .cpp είναι στον ίδιο φάκελο με αυτό το script
+# 2. Add Design Files
+# NOTE: Ensure that .cpp files are in the same directory as this script
 add_files first_try_cong.cpp
 add_files -tb cong_testbench.cpp
 
-# 3. Ορισμός Top-Level Συνάρτησης
+# 3. Set Top-Level Function
 set_top architecture_top_level
 
 # ########################################################
-# 4. Δημιουργία Solution
+# 4. Create Solution
 
-# Ενεργοποίηση του Vitis Flow Target (παράγει .xo kernel για Vitis Platform)
-# Αν θέλεις απλό IP για Vivado, αφαίρεσε το "-flow_target vitis"
+# Enable Vitis Flow Target (generates .xo kernel for Vitis Platform)
+# If you want simple IP for Vivado, remove "-flow_target vitis"
 open_solution -flow_target vitis -reset "solution1"
 
-# 5. Ορισμός Πλακέτας & Ρολογιού
-# Πλακέτα: ZCU104 (xczu7ev-ffvc1156-2-e)
+# 5. Set Board & Clock
+# Board: ZCU104 (xczu7ev-ffvc1156-2-e)
 set_part {xczu7ev-ffvc1156-2-e}
 
-# Ρολόι: 300MHz (Περίοδος ~3.33ns)
-create_clock -period 4 -name default
+# Clock: 300MHz (Period ~3.33ns)
+create_clock -period 3.33 -name default
 
-# --- ΕΝΤΟΛΕΣ ΔΙΑΜΟΡΦΩΣΗΣ (OPTIMIZATIONS) ---
+# --- CONFIGURATION / OPTIMIZATION COMMANDS ---
 
-# Απενεργοποίηση αυτόματου pipelining (το ελέγχουμε εμείς με pragmas)
+# Disable automatic loop pipelining (we control this manually with pragmas)
 config_compile -pipeline_loops 0
 
-# Ενεργοποίηση "Unsafe Math Optimizations" 
-# Επιτρέπει αναδιάταξη πράξεων float για καλύτερο latency/DSPs
+# Enable "Unsafe Math Optimizations" 
+# Allows reordering of float operations for better latency/DSPs
 config_compile -unsafe_math_optimizations
 
-# Ορισμός Default FIFO σε LUTRAM (για τα μικρά buffers)
-# ΣΗΜΑΝΤΙΚΟ: Τα μεγάλα buffers (1023) πρέπει να έχουν #pragma HLS BIND_STORAGE ... impl=bram στον κώδικα C++
+# Set default FIFO implementation to LUTRAM (for small buffers)
 config_storage fifo -impl lutram
 
 # ----------------------------------------------------
 
-# 6. Εκτέλεση Synthesis
+# 6. Run Synthesis
 csynth_design
 
-# 7. Εκτέλεση Co-Simulation
-# Ενεργοποιημένο tracing και profiling για πλήρη έλεγχο
+# 7. Run Co-Simulation
+# Profiling enabled to check for deadlocks/stalls
 cosim_design -trace_level none -enable_dataflow_profiling
-
-vitis_hls -p cong_stencil_project_2
 
 exit
