@@ -21,8 +21,8 @@ open_solution -flow_target vitis -reset "solution1"
 # Board: ZCU104 (xczu7ev-ffvc1156-2-e)
 set_part {xczu7ev-ffvc1156-2-e}
 
-# Clock: 300MHz (Period ~3.33ns)
-create_clock -period 3.33 -name default
+# Clock: 300MHz (Period ~4ns)
+create_clock -period 4 -name default
 
 # --- CONFIGURATION / OPTIMIZATION COMMANDS ---
 
