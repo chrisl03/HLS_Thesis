@@ -43,6 +43,6 @@ csynth_design
 
 # 7. Run Co-Simulation
 # Profiling enabled to check for deadlocks/stalls
-cosim_design -trace_level none -enable_dataflow_profiling
+cosim_design -trace_level all -enable_dataflow_profiling
 
 exit
