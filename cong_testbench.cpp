@@ -14,8 +14,7 @@ const int KERNEL_COLUMNS = COLUMNS - 2;
 const int KERNEL_ITERATIONS = KERNEL_ROWS * KERNEL_COLUMNS;
 
 // Prototype of the top-level function
-void architecture_top_level(hls::stream<data_t>& A_in,
-                          hls::stream<data_t>& B_out);
+void architecture_top_level(data_t* A_in_mem, data_t* B_out_mem);
 
 void compute_golden(std::vector<data_t>& A_vec, std::vector<data_t>& B_golden_vec) {
 
@@ -54,61 +53,49 @@ int main() {
     printf("[TB] Starting Testbench...\n");
 
     // 1. Create Data
-    // Using C++ Standard Library (STL) vector
-    std::vector<data_t> A_input_vector(TOTAL_ELEMENTS);
-    std::vector<data_t> B_golden_vector;
+    std::vector<data_t> RAM_in(TOTAL_ELEMENTS);
+    std::vector<data_t> RAM_out(KERNEL_ITERATIONS); // Output is smaller
+    std::vector<data_t> Golden_out;
     
     // Fill input vector with simple data (e.g., 0, 1, 2, ...)
+    printf("[TB] Initializing input memory...\n");
     for (int i = 0; i < TOTAL_ELEMENTS; i++) {
-        A_input_vector[i] = (data_t)(i % 256); // A simple "ramp"
+        RAM_in[i] = (data_t)(i % 256);
     }
 
     // 2. Compute "Golden" Result
-    compute_golden(A_input_vector, B_golden_vector);
+    compute_golden(RAM_in, Golden_out);
 
-    // 3. Create hls::stream and fill
-    hls::stream<data_t> A_in_stream("A_in_stream");
-    hls::stream<data_t> B_out_stream("B_out_stream");
+    // 4. Run HLS Kernel
 
-    // Send all input data to the HLS kernel
-    printf("[TB] Writing %d elements to HLS input stream...\n", TOTAL_ELEMENTS);
-    for (int i = 0; i < TOTAL_ELEMENTS; i++) {
-        A_in_stream.write(A_input_vector[i]);
-    }
-
-    // 4. Execute HLS Kernel (DUT)
-    // Call your top-level function
-    printf("[TB] Calling 'architecture_top_level' (HLS Kernel)...\n");
-    architecture_top_level(A_in_stream, B_out_stream);
-    printf("[TB] HLS Kernel execution finished.\n");
+    printf("[TB] Calling 'architecture_top_level' with memory pointers...\n");
+    
+    architecture_top_level(RAM_in.data(), RAM_out.data());
+    
+    printf("[TB] Execution finished.\n");
 
     // 5. Verify Results
     printf("[TB] Verifying results...\n");
     int errors = 0;
     for (int i = 0; i < KERNEL_ITERATIONS; i++) {
-        // Read result from HLS
-        data_t hls_result = B_out_stream.read();
-        
-        // Get the "golden" result
-        data_t golden_result = B_golden_vector[i];
+        data_t hls_val = RAM_out[i]; // Read from output memory
+        data_t ref_val = Golden_out[i];
 
-        // Compare (with tolerance because it is float)
-        if (std::abs(hls_result - golden_result) > 0.001f) {
+        // Float comparison
+        if (std::abs(hls_val - ref_val) > 0.001) {
             errors++;
-            printf("  [ERROR] Mismatch at index %d: HLS Result = %f, Golden Result = %f\n",
-                   i, hls_result, golden_result);
+            if (errors < 10) {
+                printf("  [ERROR] i=%d HLS=%f Ref=%f\n", i, hls_val, ref_val);
+            }
         }
     }
 
-    // 6. Final Report
     if (errors == 0) {
         printf("\n--- TEST PASSED ---\n");
-        printf("All %d output values matched the golden reference.\n", KERNEL_ITERATIONS);
+        printf("Output size matches: %d pixels\n", KERNEL_ITERATIONS);
     } else {
-        printf("\n--- TEST FAILED ---\n");
-        printf("%d mismatches found.\n", errors);
+        printf("\n--- TEST FAILED: %d errors ---\n", errors);
     }
 
-    // Return 0 means success in C-Simulation
     return (errors == 0) ? 0 : 1;
 }
