@@ -19,6 +19,26 @@ const int KERNEL_ROWS = ROWS - 2; // 0+1 til 767-1 instead of 0-768
 const int KERNEL_COLUMNS = COLUMNS - 2; // 0+1 til 1023-1 instead of 0-1024
 const int KERNEL_ITERATIONS = KERNEL_ROWS * KERNEL_COLUMNS;
 
+void load_input(data_t* in_mem, hls::stream<data_t>& in_stream) {
+    
+    for (int i = 0; i < TOTAL_ELEMENTS; i++) {
+        #pragma HLS PIPELINE
+        
+        data_t temp = in_mem[i];
+        in_stream.write(temp);
+    }
+}
+
+void store_output(hls::stream<data_t>& out_stream, data_t* out_mem) {
+
+    for (int i = 0; i < KERNEL_ITERATIONS; i++) {
+        #pragma HLS PIPELINE
+        
+        data_t temp = out_stream.read();
+        out_mem[i] = temp;
+    }
+}
+
 template <int T_TOTAL_ELEMENTS>
 void data_splitter(hls::stream<data_t> &in,
                    hls::stream<data_t> &out_to_fifo,
@@ -94,7 +114,7 @@ void last_splitter_emptying(hls::stream<data_t>& in) { //Needed so that the daat
     }
 }
 
-void architecture_top_level(hls::stream<data_t> &A_in,
+void stencil_compute(hls::stream<data_t> &A_in,
                          hls::stream<data_t> &B_out) {
     #pragma HLS DATAFLOW
 
@@ -141,4 +161,24 @@ void architecture_top_level(hls::stream<data_t> &A_in,
     // Computation Kernel
     compute_kernel<KERNEL_ITERATIONS>(
         f0_to_compute, f1_to_compute, f2_to_compute, f3_to_compute, f4_to_compute, B_out);
+}
+
+void architecture_top_level(data_t* A_in_mem, data_t* B_out_mem) {
+    
+    // Interfaces for Memory
+    #pragma HLS INTERFACE m_axi port=A_in_mem bundle=gmem0 depth=TOTAL_ELEMENTS
+    #pragma HLS INTERFACE m_axi port=B_out_mem bundle=gmem1 depth=KERNEL_ITERATIONS
+    #pragma HLS INTERFACE s_axilite port=return
+
+    #pragma HLS DATAFLOW
+
+    hls::stream<data_t> input_stream;
+    #pragma HLS STREAM variable=input_stream depth=128 
+    
+    hls::stream<data_t> output_stream;
+    #pragma HLS STREAM variable=output_stream depth=128 
+
+    load_input(A_in_mem, input_stream);
+    stencil_compute(input_stream, output_stream);
+    store_output(output_stream, B_out_mem);
 }
