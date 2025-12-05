@@ -46,3 +46,10 @@ csynth_design
 cosim_design -trace_level all -enable_dataflow_profiling
 
 exit
+
+#vitis_hls -f run_hls.tcl
+#vitis_hls -p cong_stencil_project_2
+
+#call C:\Xilinx2025.2\2025.2\Vitis\settings64.bat
+#cd /d C:\GitHub\HLS_Thesis
+#vitis-run --mode hls --tcl run_hls.tcl
