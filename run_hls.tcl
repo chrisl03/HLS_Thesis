@@ -22,7 +22,7 @@ open_solution -flow_target vitis -reset "solution1"
 set_part {xczu7ev-ffvc1156-2-e}
 
 # Clock: 300MHz (Period ~4ns)
-create_clock -period 4.5 -name default
+create_clock -period 7 -name default
 
 # --- CONFIGURATION / OPTIMIZATION COMMANDS ---
 
@@ -53,3 +53,5 @@ exit
 #call C:\Xilinx2025.2\2025.2\Vitis\settings64.bat
 #cd /d C:\GitHub\HLS_Thesis
 #vitis-run --mode hls --tcl run_hls.tcl
+
+#%APPDATA%/Xilinx/HLS_init.tcl
