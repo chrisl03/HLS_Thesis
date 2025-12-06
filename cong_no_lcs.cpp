@@ -11,8 +11,8 @@ const int COLUMNS = 1024; //II A (408)
 const int TOTAL_ELEMENTS = ROWS * COLUMNS;
 
 const int FIFO_0_DEPTH = 1023;
-const int FIFO_1_DEPTH = 1;
-const int FIFO_2_DEPTH = 1;
+const int FIFO_1_DEPTH = 2;
+const int FIFO_2_DEPTH = 2;
 const int FIFO_3_DEPTH = 1023; //TABLE 3 (413)
 
 const int KERNEL_ROWS = ROWS - 2; // 0+1 til 767-1 instead of 0-768
@@ -114,6 +114,20 @@ void architecture_top_level(hls::stream<data_t> &A_in,
     hls::stream<data_t> s0_to_f0, s1_to_f1, s2_to_f2, s3_to_f3, s4_to_f4;
     hls::stream<data_t> f0_to_compute, f1_to_compute, f2_to_compute, f3_to_compute, f4_to_compute;
     hls::stream<data_t> to_discard; // s4 out (not needed as described before)
+
+    #pragma HLS STREAM variable=s0_to_f0 depth=4
+    #pragma HLS STREAM variable=s1_to_f1 depth=4
+    #pragma HLS STREAM variable=s2_to_f2 depth=4
+    #pragma HLS STREAM variable=s3_to_f3 depth=4
+    #pragma HLS STREAM variable=s4_to_f4 depth=4
+    #pragma HLS STREAM variable=to_discard depth=4
+    #pragma HLS STREAM variable=f0_to_compute depth=4   
+    #pragma HLS STREAM variable=f1_to_compute depth=1024 //must fit 1 row
+    #pragma HLS STREAM variable=f2_to_compute depth=1024 //must fit 1 row
+    #pragma HLS STREAM variable=f3_to_compute depth=1024 //must fit 1 row
+    #pragma HLS STREAM variable=f4_to_compute depth=2048 //must fit 2 rows
+
+
 
     // All modules initialisation (Acc to Figure 5 (411))
     // s0 and filter_0 (A[i+1][j]: i=2..767, j=1..1022)
