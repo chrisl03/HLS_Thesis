@@ -11,8 +11,8 @@ const int COLUMNS = 1024; //II A (408)
 const int TOTAL_ELEMENTS = ROWS * COLUMNS;
 
 const int FIFO_0_DEPTH = 1023;
-const int FIFO_1_DEPTH = 2;
-const int FIFO_2_DEPTH = 2;
+const int FIFO_1_DEPTH = 4;
+const int FIFO_2_DEPTH = 4;
 const int FIFO_3_DEPTH = 1023; //TABLE 3 (413)
 
 const int KERNEL_ROWS = ROWS - 2; // 0+1 til 767-1 instead of 0-768
