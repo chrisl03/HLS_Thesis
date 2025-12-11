@@ -1,49 +1,49 @@
 #include <stdio.h>  
-#include "ap_int.h"    
+#include "ap_int.h"     
 #include "ap_fixed.h" 
 #include "hls_stream.h"
 #include "hls_math.h"  
 
 typedef float data_t;
 
+// --- CONSTANTS FROM INPUT 1 ---
 const int ROWS = 16;
 const int COLUMNS = 1024; //II A (408)
 const int TOTAL_ELEMENTS = ROWS * COLUMNS;
 
 const int FIFO_0_DEPTH = 1023;
-const int FIFO_1_DEPTH = 1;
-const int FIFO_2_DEPTH = 1;
+const int FIFO_1_DEPTH = 4; 
+const int FIFO_2_DEPTH = 4; 
 const int FIFO_3_DEPTH = 1023; //TABLE 3 (413)
 
-const int KERNEL_ROWS = ROWS - 2; // 0+1 til 767-1 instead of 0-768
-const int KERNEL_COLUMNS = COLUMNS - 2; // 0+1 til 1023-1 instead of 0-1024
+const int KERNEL_ROWS = ROWS - 2; 
+const int KERNEL_COLUMNS = COLUMNS - 2; 
 const int KERNEL_ITERATIONS = KERNEL_ROWS * KERNEL_COLUMNS;
 
+// --- LOAD MODULE ---
 void load_input(data_t* in_mem, hls::stream<data_t>& in_stream) {
-    
     for (int i = 0; i < TOTAL_ELEMENTS; i++) {
-        #pragma HLS PIPELINE
-        
+        #pragma HLS PIPELINE II=1
         data_t temp = in_mem[i];
         in_stream.write(temp);
     }
 }
 
+// --- STORE MODULE ---
 void store_output(hls::stream<data_t>& out_stream, data_t* out_mem) {
-
     for (int i = 0; i < KERNEL_ITERATIONS; i++) {
-        #pragma HLS PIPELINE
-        
+        #pragma HLS PIPELINE II=1
         data_t temp = out_stream.read();
         out_mem[i] = temp;
     }
 }
 
+// --- CORE LOGIC MODULES (UNCHANGED FROM INPUT 1) ---
+
 template <int T_TOTAL_ELEMENTS>
 void data_splitter(hls::stream<data_t> &in,
                    hls::stream<data_t> &out_to_fifo,
                    hls::stream<data_t> &out_to_filter) { //FIG 5 (411)
-
 
     for (int i = 0; i < T_TOTAL_ELEMENTS; i++) {
         #pragma HLS PIPELINE II=1
@@ -107,33 +107,50 @@ void compute_kernel(hls::stream<data_t>& in_1, // A[i+1][j]
 }
 
 template <int T_TOTAL_ELEMENTS>
-void last_splitter_emptying(hls::stream<data_t>& in) { //Needed so that the daata forwarded from last splitter to non-existent FIFO is emptied
+void last_splitter_emptying(hls::stream<data_t>& in) { 
     for (int i = 0; i < T_TOTAL_ELEMENTS; i++) {
         #pragma HLS PIPELINE II=1
         in.read();
     }
 }
 
+// --- COMPUTE WRAPPER (This was 'architecture_top_level' in Input 1) ---
 void stencil_compute(hls::stream<data_t> &A_in,
-                         hls::stream<data_t> &B_out) {
+                     hls::stream<data_t> &B_out) {
     #pragma HLS DATAFLOW
 
     // FIFO initialisation
     hls::stream<data_t> fifo_0;
     #pragma HLS STREAM variable=fifo_0 depth=FIFO_0_DEPTH
     #pragma HLS BIND_STORAGE variable=fifo_0 type=fifo impl=bram
+    
     hls::stream<data_t> fifo_1;
-    #pragma HLS STREAM variable=fifo_1 depth=FIFO_1_DEPTH
+    #pragma HLS STREAM variable=fifo_1 depth=FIFO_1_DEPTH // Kept 4
+    
     hls::stream<data_t> fifo_2;
-    #pragma HLS STREAM variable=fifo_2 depth=FIFO_2_DEPTH
+    #pragma HLS STREAM variable=fifo_2 depth=FIFO_2_DEPTH // Kept 4
+    
     hls::stream<data_t> fifo_3;
     #pragma HLS STREAM variable=fifo_3 depth=FIFO_3_DEPTH
     #pragma HLS BIND_STORAGE variable=fifo_3 type=fifo impl=bram
 
-    // Intermediate results
+    // Intermediate results - Stream depths preserved from Input 1
     hls::stream<data_t> s0_to_f0, s1_to_f1, s2_to_f2, s3_to_f3, s4_to_f4;
     hls::stream<data_t> f0_to_compute, f1_to_compute, f2_to_compute, f3_to_compute, f4_to_compute;
-    hls::stream<data_t> to_discard; // s4 out (not needed as described before)
+    hls::stream<data_t> to_discard; 
+
+    #pragma HLS STREAM variable=s0_to_f0 depth=4
+    #pragma HLS STREAM variable=s1_to_f1 depth=4
+    #pragma HLS STREAM variable=s2_to_f2 depth=4
+    #pragma HLS STREAM variable=s3_to_f3 depth=4
+    #pragma HLS STREAM variable=s4_to_f4 depth=4
+    #pragma HLS STREAM variable=to_discard depth=4
+    
+    #pragma HLS STREAM variable=f0_to_compute depth=4   
+    #pragma HLS STREAM variable=f1_to_compute depth=1024 //must fit 1 row
+    #pragma HLS STREAM variable=f2_to_compute depth=1024 //must fit 1 row
+    #pragma HLS STREAM variable=f3_to_compute depth=1024 //must fit 1 row
+    #pragma HLS STREAM variable=f4_to_compute depth=2048 //must fit 2 rows
 
     // All modules initialisation (Acc to Figure 5 (411))
     // s0 and filter_0 (A[i+1][j]: i=2..767, j=1..1022)
@@ -163,6 +180,7 @@ void stencil_compute(hls::stream<data_t> &A_in,
         f0_to_compute, f1_to_compute, f2_to_compute, f3_to_compute, f4_to_compute, B_out);
 }
 
+// --- TOP LEVEL ARCHITECTURE ---
 void architecture_top_level(data_t* A_in_mem, data_t* B_out_mem) {
     
     // Interfaces for Memory
