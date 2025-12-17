@@ -147,10 +147,10 @@ void stencil_compute(hls::stream<data_t> &A_in,
     #pragma HLS STREAM variable=to_discard depth=4
     
     #pragma HLS STREAM variable=f0_to_compute depth=4   
-    #pragma HLS STREAM variable=f1_to_compute depth=1024 //must fit 1 row
-    #pragma HLS STREAM variable=f2_to_compute depth=1024 //must fit 1 row
-    #pragma HLS STREAM variable=f3_to_compute depth=1024 //must fit 1 row
-    #pragma HLS STREAM variable=f4_to_compute depth=2048 //must fit 2 rows
+    #pragma HLS STREAM variable=f1_to_compute depth=4
+    #pragma HLS STREAM variable=f2_to_compute depth=4
+    #pragma HLS STREAM variable=f3_to_compute depth=4 
+    #pragma HLS STREAM variable=f4_to_compute depth=4 
 
     // All modules initialisation (Acc to Figure 5 (411))
     // s0 and filter_0 (A[i+1][j]: i=2..767, j=1..1022)

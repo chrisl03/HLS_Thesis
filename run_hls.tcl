@@ -1,11 +1,11 @@
 # 1. Create Project
 # This will create a folder named "cong_stencil_project_2"
-open_project -reset cong_stencil_project_2_no_lcs
+open_project -reset cong_stencil_project_2
 
 # 2. Add Design Files
 # NOTE: Ensure that .cpp files are in the same directory as this script
-add_files cong_no_lcs.cpp
-add_files -tb cong_no_lcs_tb.cpp
+add_files first_try_cong.cpp
+add_files -tb cong_testbench.cpp
 
 # 3. Set Top-Level Function
 set_top architecture_top_level
