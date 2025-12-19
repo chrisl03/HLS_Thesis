@@ -3,36 +3,40 @@
 #include "ap_fixed.h"   
 #include "hls_stream.h" 
 #include "hls_math.h" 
+#include <vector> 
+#include <cmath>
+#include <fstream>  // Added for file writing
+#include <iomanip>  // Added for formatting
 
 typedef float data_t;
+
+// --- CONSTANTS ---
 const int ROWS = 16;
 const int COLUMNS = 1024;
 const int TOTAL_ELEMENTS = ROWS * COLUMNS;
-const int KERNEL_ROWS = ROWS - 2;
-const int KERNEL_COLUMNS = COLUMNS - 2;
-const int KERNEL_ITERATIONS = KERNEL_ROWS * KERNEL_COLUMNS;
+const int KERNEL_ITERATIONS = TOTAL_ELEMENTS; 
 
 void architecture_top_level(hls::stream<data_t>& A_in,
-                         hls::stream<data_t>& B_out);
+                          hls::stream<data_t>& B_out);
 
+// --- GOLDEN MODEL (With Padding Logic) ---
 void compute_golden(std::vector<data_t>& A_vec, std::vector<data_t>& B_golden_vec) {
-
-    printf("  [Golden] Starting golden computation...\n");
-    // Κάνουμε clear τον vector εξόδου για σιγουριά
     B_golden_vec.clear();
-
-    // Οι βρόχοι του Listing 1 [cite: 55-59]
-    for (int i = 1; i < ROWS - 1; i++) {
-        for (int j = 1; j < COLUMNS - 1; j++) {
+    for (int i = 0; i < ROWS; i++) {
+        for (int j = 0; j < COLUMNS; j++) {
             
-            // Μετατροπή 2D index σε 1D index
-            data_t a10  = A_vec[(i + 1) * COLUMNS + j]; // A[i+1][j]
-            data_t a01  = A_vec[i * COLUMNS + (j + 1)]; // A[i][j+1]
-            data_t a00  = A_vec[i * COLUMNS + j];       // A[i][j]
-            data_t a0m1 = A_vec[i * COLUMNS + (j - 1)]; // A[i][j-1]
-            data_t am10 = A_vec[(i - 1) * COLUMNS + j]; // A[i-1][j]
+            // Replicate Padding Indices
+            int r_down  = (i == ROWS - 1)    ? i : i + 1;
+            int c_right = (j == COLUMNS - 1) ? j : j + 1;
+            int c_left  = (j == 0)           ? j : j - 1;
+            int r_up    = (i == 0)           ? i : i - 1;
 
-            // Οι ίδιες πράξεις με το kernel
+            data_t a00  = A_vec[i * COLUMNS + j];       
+            data_t a10  = A_vec[r_down * COLUMNS + j];  
+            data_t a01  = A_vec[i * COLUMNS + c_right]; 
+            data_t a0m1 = A_vec[i * COLUMNS + c_left];  
+            data_t am10 = A_vec[r_up * COLUMNS + j];    
+
             data_t res_0 = a00 - a0m1;
             data_t res_1 = a00 - a01;
             data_t res_2 = a00 - am10;
@@ -41,72 +45,109 @@ void compute_golden(std::vector<data_t>& A_vec, std::vector<data_t>& B_golden_ve
             data_t b_val = (res_0 * res_0) + (res_1 * res_1) +
                            (res_2 * res_2) + (res_3 * res_3);
 
-            // Προσθήκη του αποτελέσματος στη λίστα
             B_golden_vec.push_back(b_val);
         }
     }
-    printf("  [Golden] Golden computation finished. Produced %zu outputs.\n", B_golden_vec.size());
+}
+
+// --- HELPER: Save Matrix to File ---
+void save_matrix_to_file(const std::vector<data_t>& data, const char* filename) {
+    std::ofstream outfile(filename);
+    if (!outfile.is_open()) {
+        printf("[TB] Error opening file %s\n", filename);
+        return;
+    }
+
+    outfile << "      ";
+    for(int j=0; j<COLUMNS; j++) outfile << std::setw(8) << j; 
+    outfile << "\n";
+
+    for (int i = 0; i < ROWS; i++) {
+        outfile << "R" << std::setw(3) << i << ": ";
+        for (int j = 0; j < COLUMNS; j++) {
+            outfile << std::setw(8) << std::fixed << std::setprecision(1) << data[i*COLUMNS + j];
+        }
+        outfile << "\n";
+    }
+    outfile.close();
+    printf("[TB] Saved full results to %s\n", filename);
+}
+
+// --- HELPER: Print Small Corner to Console ---
+void print_corner_comparison(const std::vector<data_t>& golden, const std::vector<data_t>& hls) {
+    printf("\n--- VISUAL CHECK (Top-Left 8x8) ---\n");
+    printf("Format: [Golden | HLS]\n");
+    
+    int limit_r = (ROWS < 8) ? ROWS : 8;
+    int limit_c = (COLUMNS < 8) ? COLUMNS : 8;
+
+    for (int i = 0; i < limit_r; i++) {
+        printf("Row %2d: ", i);
+        for (int j = 0; j < limit_c; j++) {
+            int idx = i * COLUMNS + j;
+            // Print integer part for compactness if they are whole numbers
+            printf("[%3.0f|%3.0f] ", golden[idx], hls[idx]);
+        }
+        printf("\n");
+    }
+    printf("-----------------------------------\n");
 }
 
 int main() {
     printf("[TB] Starting Testbench...\n");
 
-    // 1. Δημιουργία Δεδομένων
-    // Χρησιμοποιούμε vector της C++ Standard Library (STL)
-    std::vector<data_t> A_input_vector(TOTAL_ELEMENTS);
-    std::vector<data_t> B_golden_vector;
-    
-    // Γέμισμα του vector εισόδου με απλά δεδομένα (π.χ., 0, 1, 2, ...)
-    for (int i = 0; i < TOTAL_ELEMENTS; i++) {
-        A_input_vector[i] = (data_t)(i % 256); // Μια απλή "ράμπα"
-    }
+    // 1. Setup Data
+    std::vector<data_t> A_input(TOTAL_ELEMENTS);
+    std::vector<data_t> B_golden;
+    std::vector<data_t> B_hls(TOTAL_ELEMENTS); // Pre-allocate
 
-    // 2. Υπολογισμός "Golden" Αποτελέσματος
-    compute_golden(A_input_vector, B_golden_vector);
-
-    // 3. Δημιουργία hls::stream και γέμισμα
-    hls::stream<data_t> A_in_stream("A_in_stream");
-    hls::stream<data_t> B_out_stream("B_out_stream");
-
-    // Στέλνουμε όλα τα δεδομένα εισόδου στο HLS kernel
-    printf("[TB] Writing %d elements to HLS input stream...\n", TOTAL_ELEMENTS);
-    for (int i = 0; i < TOTAL_ELEMENTS; i++) {
-        A_in_stream.write(A_input_vector[i]);
-    }
-
-    // 4. Εκτέλεση του HLS Kernel (DUT)
-    // Καλούμε το top-level function σας
-    printf("[TB] Calling 'architecture_top_level' (HLS Kernel)...\n");
-    architecture_top_level(A_in_stream, B_out_stream);
-    printf("[TB] HLS Kernel execution finished.\n");
-
-    // 5. Επαλήθευση Αποτελεσμάτων
-    printf("[TB] Verifying results...\n");
-    int errors = 0;
-    for (int i = 0; i < KERNEL_ITERATIONS; i++) {
-        // Διαβάζουμε το αποτέλεσμα από το HLS
-        data_t hls_result = B_out_stream.read();
-        
-        // Παίρνουμε το "golden" αποτέλεσμα
-        data_t golden_result = B_golden_vector[i];
-
-        // Σύγκριση (με "ανοχή" (tolerance) επειδή είναι float)
-        if (std::abs(hls_result - golden_result) > 0.001f) {
-            errors++;
-            printf("  [ERROR] Mismatch at index %d: HLS Result = %f, Golden Result = %f\n",
-                   i, hls_result, golden_result);
+    // Initialize with a pattern that makes tracking easy
+    // Value = Row index (so all pixels in row 0 are 0, row 1 are 1...)
+    // This makes gradients easy to predict (Vertical diff=1, Horizontal diff=0)
+    for (int i = 0; i < ROWS; i++) {
+        for(int j=0; j < COLUMNS; j++) {
+            A_input[i*COLUMNS + j] = (data_t)i; 
         }
     }
 
-    // 6. Τελική Αναφορά
-    if (errors == 0) {
-        printf("\n--- TEST PASSED ---\n");
-        printf("All %d output values matched the golden reference.\n", KERNEL_ITERATIONS);
-    } else {
-        printf("\n--- TEST FAILED ---\n");
-        printf("%d mismatches found.\n", errors);
+    // 2. Compute Golden
+    compute_golden(A_input, B_golden);
+
+    // 3. Run HLS
+    hls::stream<data_t> A_in_stream("A_in");
+    hls::stream<data_t> B_out_stream("B_out");
+
+    for (int i = 0; i < TOTAL_ELEMENTS; i++) A_in_stream.write(A_input[i]);
+
+    printf("[TB] Running HLS Kernel...\n");
+    architecture_top_level(A_in_stream, B_out_stream);
+
+    // 4. Capture HLS Output
+    for (int i = 0; i < KERNEL_ITERATIONS; i++) {
+        if (B_out_stream.empty()) {
+            printf("[FATAL] Stream empty at index %d!\n", i);
+            break; 
+        }
+        B_hls[i] = B_out_stream.read();
     }
 
-    // Επιστροφή 0 σημαίνει επιτυχία στο C-Simulation
+    // 5. Compare and Report
+    int errors = 0;
+    for (int i = 0; i < TOTAL_ELEMENTS; i++) {
+        if (std::abs(B_hls[i] - B_golden[i]) > 0.001f) errors++;
+    }
+
+    // 6. Visualization
+    print_corner_comparison(B_golden, B_hls);
+    save_matrix_to_file(B_golden, "golden_output.txt");
+    save_matrix_to_file(B_hls, "hls_output.txt");
+
+    if (errors == 0) {
+        printf("\n--- TEST PASSED ---\n");
+    } else {
+        printf("\n--- TEST FAILED: %d mismatches ---\n", errors);
+        printf("Check 'golden_output.txt' and 'hls_output.txt' for details.\n");
+    }
+
     return (errors == 0) ? 0 : 1;
 }

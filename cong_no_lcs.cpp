@@ -66,12 +66,32 @@ void compute_kernel(hls::stream<data_t>& in_1, // A[i+1][j]
     for (int i = 0; i < T_ITERATIONS; i++) {
         #pragma HLS PIPELINE II=1
 
+        //counters for current row/column
+        int r = 0;
+        int c = 0;
+
         // Reading the needed inputs
         data_t a10 = in_1.read(); //+1 0
         data_t a01 = in_2.read(); //0 +1
         data_t a00 = in_3.read(); //0 0
         data_t a0m1 = in_4.read(); //0 -1
         data_t am10 = in_5.read(); //-1 0
+
+        data_t val_down, val_right, val_left, val_up;
+
+        //For the padding, the extra rows/columns will be duplicates of the first/last rows/columns, so that the padded elements minus the center adds 0 to the result
+
+        //bottom row filling
+        if (r == ROWS - 1) a10 = a00;
+
+        // right column filling
+        if (c == COLUMNS - 1) a01 = a00;
+
+        // left column filling
+        if (c == 0) a0m1 = a00;
+
+        // top row filling
+        if (r == 0) am10 = a00;
 
         // Calculations in Listing 1 (408), Listing 2 (409)
         data_t res_0 = a00 - a0m1;
@@ -83,6 +103,13 @@ void compute_kernel(hls::stream<data_t>& in_1, // A[i+1][j]
                        (res_2 * res_2) + (res_3 * res_3);
 
         out_B.write(b_val);
+
+        if (c == COLUMNS - 1) {
+            c = 0;
+            r++;
+        } else {
+            c++;
+        }
     }
 }
 
@@ -129,25 +156,25 @@ void architecture_top_level(hls::stream<data_t> &A_in,
 
 
     // All modules initialisation (Acc to Figure 5 (411))
-    // s0 and filter_0 (A[i+1][j]: i=2..767, j=1..1022)
+    // s0 (Down)
     data_splitter<TOTAL_ELEMENTS>(A_in, fifo_0, s0_to_f0);
-    data_filter<ROWS, COLUMNS, 2, ROWS-1, 1, COLUMNS-2>(s0_to_f0, f0_to_compute);
+    data_filter<ROWS, COLUMNS, 0, ROWS-1, 0, COLUMNS-1>(s0_to_f0, f0_to_compute);
 
-    // s1 and filter_1 (A[i][j+1]: i=1..766, j=2..1023)
+    // s1 (Right)
     data_splitter<TOTAL_ELEMENTS>(fifo_0, fifo_1, s1_to_f1);
-    data_filter<ROWS, COLUMNS, 1, ROWS-2, 2, COLUMNS-1>(s1_to_f1, f1_to_compute);
+    data_filter<ROWS, COLUMNS, 0, ROWS-1, 0, COLUMNS-1>(s1_to_f1, f1_to_compute);
 
-    // s2 and filter_2 (A[i][j]: i=1..766, j=1..1022)
+    // s2 (Center)
     data_splitter<TOTAL_ELEMENTS>(fifo_1, fifo_2, s2_to_f2);
-    data_filter<ROWS, COLUMNS, 1, ROWS-2, 1, COLUMNS-2>(s2_to_f2, f2_to_compute);
+    data_filter<ROWS, COLUMNS, 0, ROWS-1, 0, COLUMNS-1>(s2_to_f2, f2_to_compute);
 
-    // s3 and filter_3 (A[i][j-1]: i=1..766, j=0..1021)
+    // s3 (Left)
     data_splitter<TOTAL_ELEMENTS>(fifo_2, fifo_3, s3_to_f3);
-    data_filter<ROWS, COLUMNS, 1, ROWS-2, 0, COLUMNS-3>(s3_to_f3, f3_to_compute);
+    data_filter<ROWS, COLUMNS, 0, ROWS-1, 0, COLUMNS-1>(s3_to_f3, f3_to_compute);
 
-    // s4 and filter_4 (A[i-1][j]: i=0..765, j=1..1022)
+    // s4 (Up)
     data_splitter<TOTAL_ELEMENTS>(fifo_3, to_discard, s4_to_f4);
-    data_filter<ROWS, COLUMNS, 0, ROWS-3, 1, COLUMNS-2>(s4_to_f4, f4_to_compute);
+    data_filter<ROWS, COLUMNS, 0, ROWS-1, 0, COLUMNS-1>(s4_to_f4, f4_to_compute);
 
     last_splitter_emptying<TOTAL_ELEMENTS>(to_discard);
 
