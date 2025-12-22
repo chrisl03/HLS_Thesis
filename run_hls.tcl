@@ -22,7 +22,7 @@ open_solution -flow_target vitis -reset "solution1"
 set_part {xczu7ev-ffvc1156-2-e}
 
 # Clock: 300MHz (Period ~4ns)
-create_clock -period 4.5 -name default
+create_clock -period 7 -name default
 
 # --- CONFIGURATION / OPTIMIZATION COMMANDS ---
 

@@ -6,18 +6,137 @@
 
 typedef float data_t;
 
-const int ROWS = 16;
-const int COLUMNS = 1024; //II A (408)
-const int TOTAL_ELEMENTS = ROWS * COLUMNS;
+const int ORIG_ROWS = 16;
+const int ORIG_COLS = 1024;
+const int ORIG_TOTAL = ORIG_ROWS * ORIG_COLS;
 
-const int FIFO_0_DEPTH = 1023;
+const int PAD_ROWS = 18;
+const int PAD_COLS = 1026;
+const int PAD_TOTAL = PAD_ROWS * PAD_COLS;
+
+const int OUT_ITERATIONS = ORIG_ROWS * ORIG_COLS;
+
+const int FIFO_0_DEPTH = 1025; //instead of 1023, due to the padding
 const int FIFO_1_DEPTH = 4;
 const int FIFO_2_DEPTH = 4;
-const int FIFO_3_DEPTH = 1023; //TABLE 3 (413)
+const int FIFO_3_DEPTH = 1025;
 
-const int KERNEL_ROWS = ROWS - 2; // 0+1 til 767-1 instead of 0-768
-const int KERNEL_COLUMNS = COLUMNS - 2; // 0+1 til 1023-1 instead of 0-1024
-const int KERNEL_ITERATIONS = KERNEL_ROWS * KERNEL_COLUMNS;
+void padding_generator_safe(hls::stream<data_t> &in, hls::stream<data_t> &out) {
+    
+    data_t line_buf[ORIG_COLS]; // Used for Top/Bottom rows
+
+    for (int r = 0; r < ORIG_ROWS; r++) {
+        
+        //if First row load to buffer to write in the next row as well
+        if (r == 0) {
+    
+    
+    static data_t last_pix_val;
+    
+    //This loop saves first row (in order to be used in the next row as well) and writes it into the new first row (padded)
+    for (int c = 0; c < PAD_COLS; c++) {
+        #pragma HLS PIPELINE II=1
+        data_t val;
+        
+        if (c == 0) {
+            data_t p = in.read();    // read
+            line_buf[0] = p;         // save for second collumn (originally first)
+            val = p;                 // write in first collumn
+        } 
+        else if (c == 1) {
+            val = line_buf[0];       // second collumn (originally first)
+        }
+        else if (c > 1 && c < PAD_COLS - 1) {
+            data_t p = in.read();    // read
+            line_buf[c-1] = p;       // save   (currently saving everything in buffer in order to have it ready to be copied in the padded row, otherwise everything is lost)
+            val = p;                 // write
+            if (c == PAD_COLS - 2) last_pix_val = p; //saving for last column pad
+        }
+        else { 
+            val = last_pix_val; //last column pad
+        }
+        out.write(val);
+    }
+
+    // writing original Row 0 (now row 1), using line_buf
+    for (int c = 0; c < PAD_COLS; c++) {     //c is padded index (0-1025) while idx is a temporary index in order to write correctly 
+        #pragma HLS PIPELINE II=1
+        int idx = c - 1;
+        if (idx < 0) idx = 0;
+        if (idx >= ORIG_COLS) idx = ORIG_COLS - 1;
+        out.write(line_buf[idx]);
+    }
+}
+        
+        // Row 15
+        else if (r == ORIG_ROWS - 1) {   //if is in line 31 (if r==0)
+            
+            static data_t last_pix_val;
+            
+            // this loop writes the original last row, whhile at the same time saving it for the bottom row pad
+            for (int c = 0; c < PAD_COLS; c++) {
+                #pragma HLS PIPELINE II=1
+                data_t val;
+                
+                if (c == 0) {
+                    data_t p = in.read();
+                    line_buf[0] = p;
+                    val = p;         // Left Pad
+                } 
+                else if (c == 1) {
+                    val = line_buf[0]; 
+                }
+                else if (c > 1 && c < PAD_COLS - 1) {
+                    data_t p = in.read();
+                    line_buf[c-1] = p; 
+                    val = p;
+                    if (c == PAD_COLS - 2) last_pix_val = p;
+                }
+                else { // Right Pad
+                    val = last_pix_val;
+                }
+                out.write(val);
+            }
+
+            // This loop copies original last row into the new bottom pad
+            for (int c = 0; c < PAD_COLS; c++) {
+                #pragma HLS PIPELINE II=1
+                int idx = c - 1;
+                if (idx < 0) idx = 0;
+                if (idx >= ORIG_COLS) idx = ORIG_COLS - 1;
+                out.write(line_buf[idx]);
+            }
+        }
+
+        // Intermidiate rows, only first and last column padding, no need to fill the buffer
+        else {
+            static data_t first_pixel, last_pixel;
+            
+            for (int c = 0; c < PAD_COLS; c++) {
+                #pragma HLS PIPELINE II=1
+                data_t val;
+                
+                if (c == 0) {
+                    first_pixel = in.read(); 
+                    val = first_pixel; 
+                } 
+                else if (c == 1) {
+                    val = first_pixel;
+                }
+                else if (c > 1 && c < PAD_COLS - 1) {
+                    data_t p = in.read();
+                    val = p;
+                    if (c == PAD_COLS - 2) last_pixel = p;
+                }
+                else { 
+                    val = last_pixel;
+                }
+                out.write(val);
+            }
+        }
+    }
+}
+
 
 template <int T_TOTAL_ELEMENTS>
 void data_splitter(hls::stream<data_t> &in,
@@ -77,22 +196,6 @@ void compute_kernel(hls::stream<data_t>& in_1, // A[i+1][j]
         data_t a0m1 = in_4.read(); //0 -1
         data_t am10 = in_5.read(); //-1 0
 
-        data_t val_down, val_right, val_left, val_up;
-
-        //For the padding, the extra rows/columns will be duplicates of the first/last rows/columns, so that the padded elements minus the center adds 0 to the result
-
-        //bottom row filling
-        if (r == ROWS - 1) a10 = a00;
-
-        // right column filling
-        if (c == COLUMNS - 1) a01 = a00;
-
-        // left column filling
-        if (c == 0) a0m1 = a00;
-
-        // top row filling
-        if (r == 0) am10 = a00;
-
         // Calculations in Listing 1 (408), Listing 2 (409)
         data_t res_0 = a00 - a0m1;
         data_t res_1 = a00 - a01;
@@ -103,13 +206,6 @@ void compute_kernel(hls::stream<data_t>& in_1, // A[i+1][j]
                        (res_2 * res_2) + (res_3 * res_3);
 
         out_B.write(b_val);
-
-        if (c == COLUMNS - 1) {
-            c = 0;
-            r++;
-        } else {
-            c++;
-        }
     }
 }
 
@@ -124,6 +220,12 @@ void last_splitter_emptying(hls::stream<data_t>& in) { //Needed so that the daat
 void architecture_top_level(hls::stream<data_t> &A_in,
                          hls::stream<data_t> &B_out) {
     #pragma HLS DATAFLOW
+
+    hls::stream<data_t> A_padded;
+    #pragma HLS STREAM variable=A_padded depth=4
+    
+    //  (16x1024 -> 18x1026)
+    padding_generator_safe(A_in, A_padded);
 
     // FIFO initialisation
     hls::stream<data_t> fifo_0;
@@ -156,29 +258,29 @@ void architecture_top_level(hls::stream<data_t> &A_in,
 
 
     // All modules initialisation (Acc to Figure 5 (411))
-    // s0 (Down)
-    data_splitter<TOTAL_ELEMENTS>(A_in, fifo_0, s0_to_f0);
-    data_filter<ROWS, COLUMNS, 0, ROWS-1, 0, COLUMNS-1>(s0_to_f0, f0_to_compute);
+    // s0 (Down): Pass Rows 2..17
+    data_splitter<PAD_TOTAL>(A_padded, fifo_0, s0_to_f0);
+    data_filter<PAD_ROWS, PAD_COLS, 2, 17, 1, 1024>(s0_to_f0, f0_to_compute);
 
-    // s1 (Right)
-    data_splitter<TOTAL_ELEMENTS>(fifo_0, fifo_1, s1_to_f1);
-    data_filter<ROWS, COLUMNS, 0, ROWS-1, 0, COLUMNS-1>(s1_to_f1, f1_to_compute);
+    // s1 (Right): Pass Cols 2..1025
+    data_splitter<PAD_TOTAL>(fifo_0, fifo_1, s1_to_f1);
+    data_filter<PAD_ROWS, PAD_COLS, 1, 16, 2, 1025>(s1_to_f1, f1_to_compute);
 
-    // s2 (Center)
-    data_splitter<TOTAL_ELEMENTS>(fifo_1, fifo_2, s2_to_f2);
-    data_filter<ROWS, COLUMNS, 0, ROWS-1, 0, COLUMNS-1>(s2_to_f2, f2_to_compute);
+    // s2 (Center): Pass Center (1..16, 1..1024)
+    data_splitter<PAD_TOTAL>(fifo_1, fifo_2, s2_to_f2);
+    data_filter<PAD_ROWS, PAD_COLS, 1, 16, 1, 1024>(s2_to_f2, f2_to_compute);
 
-    // s3 (Left)
-    data_splitter<TOTAL_ELEMENTS>(fifo_2, fifo_3, s3_to_f3);
-    data_filter<ROWS, COLUMNS, 0, ROWS-1, 0, COLUMNS-1>(s3_to_f3, f3_to_compute);
+    // s3 (Left): Pass Cols 0..1023
+    data_splitter<PAD_TOTAL>(fifo_2, fifo_3, s3_to_f3);
+    data_filter<PAD_ROWS, PAD_COLS, 1, 16, 0, 1023>(s3_to_f3, f3_to_compute);
 
-    // s4 (Up)
-    data_splitter<TOTAL_ELEMENTS>(fifo_3, to_discard, s4_to_f4);
-    data_filter<ROWS, COLUMNS, 0, ROWS-1, 0, COLUMNS-1>(s4_to_f4, f4_to_compute);
+    // s4 (Up): Pass Rows 0..15
+    data_splitter<PAD_TOTAL>(fifo_3, to_discard, s4_to_f4);
+    data_filter<PAD_ROWS, PAD_COLS, 0, 15, 1, 1024>(s4_to_f4, f4_to_compute);
 
-    last_splitter_emptying<TOTAL_ELEMENTS>(to_discard);
+    last_splitter_emptying<PAD_TOTAL>(to_discard);
 
-    // Computation Kernel
-    compute_kernel<KERNEL_ITERATIONS>(
+    // Kernel produces exactly 16x1024 pixels
+    compute_kernel<OUT_ITERATIONS>(
         f0_to_compute, f1_to_compute, f2_to_compute, f3_to_compute, f4_to_compute, B_out);
 }
