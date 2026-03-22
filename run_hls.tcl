@@ -1,11 +1,11 @@
 # 1. Create Project
 # This will create a folder named "cong_stencil_project_2"
-open_project -reset cong_stencil_project_2
+open_project -reset SODA_NO_LCS
 
 # 2. Add Design Files
 # NOTE: Ensure that .cpp files are in the same directory as this script
-add_files first_try_cong.cpp
-add_files -tb cong_testbench.cpp
+add_files SODA_no_lcs.cpp
+add_files -tb SODA_no_lcs_tb.cpp
 
 # 3. Set Top-Level Function
 set_top architecture_top_level
@@ -22,7 +22,7 @@ open_solution -flow_target vitis -reset "solution1"
 set_part {xczu7ev-ffvc1156-2-e}
 
 # Clock: 300MHz (Period ~4ns)
-create_clock -period 4.5 -name default
+create_clock -period 7 -name default
 
 # --- CONFIGURATION / OPTIMIZATION COMMANDS ---
 
