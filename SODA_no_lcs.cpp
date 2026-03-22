@@ -11,7 +11,7 @@ const int ORIG_COLS = 1024;
 const int ORIG_TOTAL = ORIG_ROWS * ORIG_COLS;
 
 
-const int FIFO_0_DEPTH = 1023; //instead of 1023, due to the padding
+const int FIFO_0_DEPTH = 1023; 
 const int FIFO_1_DEPTH = 1;
 const int FIFO_2_DEPTH = 1;
 const int FIFO_3_DEPTH = 1023;
@@ -44,8 +44,7 @@ void forwarding_module(hls::stream<data_t>& in,
             #pragma HLS PIPELINE II=1
             data_t new_val = in.read();
             
-            // Το μυστικό: Αν δεν έχουν περάσει T_DEPTH κύκλοι, βγάλε 0 (dummy data).
-            // Αλλιώς, βγάλε το καθυστερημένο δεδομένο από τον κυκλικό buffer.
+            // if not at depth, then out data is trash, if it is full then the desired val is pushed
             data_t out_val = (i < T_DEPTH) ? (data_t)0.0f : buffer[ptr]; 
             
             out_to_next_fw.write(out_val);
@@ -64,7 +63,7 @@ void terminal_forwarding_module(hls::stream<data_t>& in,
     data_t buffer[T_DEPTH];
     #pragma HLS BIND_STORAGE variable=buffer type=ram_2p impl=bram
     int ptr = 0;
-    
+    //same with prev, only dif is that it only has 1 output inst of 2
     for (int i = 0; i < T_TOTAL_ELEMENTS; i++) {
         #pragma HLS PIPELINE II=1
         data_t new_val = in.read();
@@ -113,14 +112,14 @@ void architecture_top_level(hls::stream<data_t> &A_in,
                             hls::stream<data_t> &B_out) {
     #pragma HLS DATAFLOW
 
-    // Ενδιάμεσα streams για την αλυσίδα των FWs
+    // FW chains
     hls::stream<data_t> fw_direct_to_0, fw0_to_fw1, fw1_to_fw2, fw2_to_fw3;
     #pragma HLS STREAM variable=fw_direct_to_0 depth=4
     #pragma HLS STREAM variable=fw0_to_fw1 depth=4
     #pragma HLS STREAM variable=fw1_to_fw2 depth=4
     #pragma HLS STREAM variable=fw2_to_fw3 depth=4
 
-    // Τα streams που μπαίνουν στον Compute Kernel
+    // streams to PEs
     hls::stream<data_t> pe_in_down, pe_in_right, pe_in_center, pe_in_left, pe_in_up;
     #pragma HLS STREAM variable=pe_in_down depth=4
     #pragma HLS STREAM variable=pe_in_right depth=4

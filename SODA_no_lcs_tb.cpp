@@ -10,12 +10,9 @@ const int ROWS = 16;
 const int COLUMNS = 1024;
 const int TOTAL_ELEMENTS = ROWS * COLUMNS;
 
-// ΔΗΛΩΣΗ ΤΟΥ HARDWARE (Απλά μια γραμμή, χωρίς τον κώδικά του!)
 void architecture_top_level(hls::stream<data_t> &A_in, hls::stream<data_t> &B_out);
 
-// ========================================================
-// 2. SOFTWARE GOLDEN MODEL
-// ========================================================
+// GOLDEN MODEL
 
 void compute_golden(std::vector<data_t>& A_vec, std::vector<data_t>& B_golden_vec) {
     printf("  [Golden] Starting golden computation...\n");
@@ -44,9 +41,7 @@ void compute_golden(std::vector<data_t>& A_vec, std::vector<data_t>& B_golden_ve
     printf("  [Golden] Finished. Produced %zu valid outputs.\n", B_golden_vec.size());
 }
 
-// ========================================================
-// 3. TESTBENCH (MAIN)
-// ========================================================
+// TESTBENCH (MAIN)
 
 int main() {
     printf("[TB] Starting Testbench...\n");
@@ -54,7 +49,6 @@ int main() {
     std::vector<data_t> A_input_vector(TOTAL_ELEMENTS);
     std::vector<data_t> B_golden_vector;
     
-    // Γέμισμα με δεκαδικά δεδομένα
     for (int i = 0; i < TOTAL_ELEMENTS; i++) {
         A_input_vector[i] = (data_t)(i % 256) / 10.0f;
     }
@@ -74,7 +68,6 @@ int main() {
 
     printf("[TB] Verifying results...\n");
     
-    // 1. Διαβάζουμε όλο το αποτέλεσμα του Hardware σε έναν πίνακα
     std::vector<data_t> B_hw_vector(TOTAL_ELEMENTS);
     for (int i = 0; i < TOTAL_ELEMENTS; i++) {
         B_hw_vector[i] = B_out_stream.read();
@@ -83,11 +76,9 @@ int main() {
     int errors = 0;
     int golden_index = 0;
 
-    // 2. Έλεγχος στα εσωτερικά πίξελ
     for (int i = 1; i < ROWS - 1; i++) {
         for (int j = 1; j < COLUMNS - 1; j++) {
             
-            // Το Hardware βγάζει το αποτέλεσμα 1024 κύκλους (1 ολόκληρη γραμμή) καθυστερημένα!
             int center_index = i * COLUMNS + j;
             data_t hls_result = B_hw_vector[center_index + 1024]; 
             
