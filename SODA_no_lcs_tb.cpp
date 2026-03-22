@@ -1,125 +1,118 @@
+#include <stdio.h>   
 #include <iostream>
+#include <vector>
 #include <cmath>
-#include <cstdlib>
-#include "hls_stream.h"
+#include "hls_stream.h" 
 
 typedef float data_t;
 
-const int ORIG_ROWS = 16;
-const int ORIG_COLS = 1024;
-const int ORIG_TOTAL = ORIG_ROWS * ORIG_COLS;
+const int ROWS = 16;
+const int COLUMNS = 1024;
+const int TOTAL_ELEMENTS = ROWS * COLUMNS;
 
-// --- Καθυστερήσεις SODA (για πλάτος 1024) ---
-const int FIFO_0_DEPTH = 1023; // Από Down σε Right
-const int FIFO_1_DEPTH = 1;    // Από Right σε Center
-const int FIFO_2_DEPTH = 1;    // Από Center σε Left
-const int FIFO_3_DEPTH = 1023; // Από Left σε Up
+// ΔΗΛΩΣΗ ΤΟΥ HARDWARE (Απλά μια γραμμή, χωρίς τον κώδικά του!)
+void architecture_top_level(hls::stream<data_t> &A_in, hls::stream<data_t> &B_out);
 
-void architecture_top_level(hls::stream<data_t>& A_in,
-                          hls::stream<data_t>& B_out);
+// ========================================================
+// 2. SOFTWARE GOLDEN MODEL
+// ========================================================
 
-// Δήλωση του top-level module (αν το tb είναι σε ξεχωριστό αρχείο, αλλιώς αγνόησέ το)
-// void architecture_top_level(hls::stream<data_t> &A_in, hls::stream<data_t> &B_out);
+void compute_golden(std::vector<data_t>& A_vec, std::vector<data_t>& B_golden_vec) {
+    printf("  [Golden] Starting golden computation...\n");
+    B_golden_vec.clear();
 
-// --------------------------------------------------------
-// 1. Το Golden Reference (Software Implementation)
-// --------------------------------------------------------
-void software_stencil(data_t in[ORIG_ROWS][ORIG_COLS], data_t out[ORIG_ROWS][ORIG_COLS]) {
-    for (int i = 0; i < ORIG_ROWS; i++) {
-        for (int j = 0; j < ORIG_COLS; j++) {
+    for (int i = 1; i < ROWS - 1; i++) {
+        for (int j = 1; j < COLUMNS - 1; j++) {
             
-            // Υπολογίζουμε μόνο τα εσωτερικά πίξελ (εκεί που το παράθυρο δεν βγαίνει εκτός ορίων)
-            if (i > 0 && i < ORIG_ROWS - 1 && j > 0 && j < ORIG_COLS - 1) {
-                data_t a00  = in[i][j];     // Center
-                data_t a10  = in[i+1][j];   // Down
-                data_t a01  = in[i][j+1];   // Right
-                data_t a0m1 = in[i][j-1];   // Left
-                data_t am10 = in[i-1][j];   // Up
+            data_t a10  = A_vec[(i + 1) * COLUMNS + j]; 
+            data_t a01  = A_vec[i * COLUMNS + (j + 1)]; 
+            data_t a00  = A_vec[i * COLUMNS + j];       
+            data_t a0m1 = A_vec[i * COLUMNS + (j - 1)]; 
+            data_t am10 = A_vec[(i - 1) * COLUMNS + j]; 
 
-                data_t res_0 = a00 - a0m1;
-                data_t res_1 = a00 - a01;
-                data_t res_2 = a00 - am10;
-                data_t res_3 = a00 - a10;
+            data_t res_0 = a00 - a0m1;
+            data_t res_1 = a00 - a01;
+            data_t res_2 = a00 - am10;
+            data_t res_3 = a00 - a10;
 
-                out[i][j] = (res_0 * res_0) + (res_1 * res_1) +
-                            (res_2 * res_2) + (res_3 * res_3);
-            } else {
-                out[i][j] = 0.0f; // Στα σύνορα βάζουμε 0 στο software
-            }
+            data_t b_val = (res_0 * res_0) + (res_1 * res_1) +
+                           (res_2 * res_2) + (res_3 * res_3);
+
+            B_golden_vec.push_back(b_val);
         }
     }
+    printf("  [Golden] Finished. Produced %zu valid outputs.\n", B_golden_vec.size());
 }
 
-// --------------------------------------------------------
-// 2. Η συνάρτηση Main (Το Testbench)
-// --------------------------------------------------------
+// ========================================================
+// 3. TESTBENCH (MAIN)
+// ========================================================
+
 int main() {
-    // Δέσμευση μνήμης για τους πίνακες ελέγχου
-    data_t A_in_array[ORIG_ROWS][ORIG_COLS];
-    data_t B_hw_array[ORIG_ROWS][ORIG_COLS];
-    data_t B_sw_array[ORIG_ROWS][ORIG_COLS];
+    printf("[TB] Starting Testbench...\n");
 
-    hls::stream<data_t> A_stream("A_stream");
-    hls::stream<data_t> B_stream("B_stream");
-
-    // ΒΗΜΑ 1: Δημιουργία τυχαίων δεδομένων (Test Data)
-    std::cout << "Generating input data..." << std::endl;
-    for (int i = 0; i < ORIG_ROWS; i++) {
-        for (int j = 0; j < ORIG_COLS; j++) {
-            // Βάζουμε τυχαίους δεκαδικούς από το 0.0 έως το 9.9
-            A_in_array[i][j] = (data_t)(rand() % 100) / 10.0f; 
-            
-            // Παράλληλα, τα "ταΐζουμε" στο stream του hardware
-            A_stream.write(A_in_array[i][j]); 
-        }
-    }
-
-    // ΒΗΜΑ 2: Εκτέλεση του Software Golden Model
-    std::cout << "Running Software Stencil..." << std::endl;
-    software_stencil(A_in_array, B_sw_array);
-
-    // ΒΗΜΑ 3: Εκτέλεση του Hardware (HLS Top Level)
-    std::cout << "Running Hardware (HLS) core..." << std::endl;
-    architecture_top_level(A_stream, B_stream);
-
-    // ΒΗΜΑ 4: Ανάγνωση των αποτελεσμάτων από το Hardware stream
-    for (int i = 0; i < ORIG_ROWS; i++) {
-        for (int j = 0; j < ORIG_COLS; j++) {
-            B_hw_array[i][j] = B_stream.read();
-        }
-    }
-
-    // ΒΗΜΑ 5: Σύγκριση HW με SW (ΜΟΝΟ στα εσωτερικά πίξελ)
-    std::cout << "Comparing results..." << std::endl;
-    int errors = 0;
+    std::vector<data_t> A_input_vector(TOTAL_ELEMENTS);
+    std::vector<data_t> B_golden_vector;
     
-    // Προσέξτε τα όρια των loops! Αρχίζουν από 1 και τελειώνουν στο N-1.
-    for (int i = 1; i < ORIG_ROWS - 1; i++) {
-        for (int j = 1; j < ORIG_COLS - 1; j++) {
-            data_t hw_val = B_hw_array[i][j];
-            data_t sw_val = B_sw_array[i][j];
+    // Γέμισμα με δεκαδικά δεδομένα
+    for (int i = 0; i < TOTAL_ELEMENTS; i++) {
+        A_input_vector[i] = (data_t)(i % 256) / 10.0f;
+    }
 
-            // Έλεγχος διαφοράς (επειδή είναι float, βάζουμε μια μικρή ανοχή 0.001)
-            if (std::abs(hw_val - sw_val) > 0.001f) {
+    compute_golden(A_input_vector, B_golden_vector);
+
+    hls::stream<data_t> A_in_stream("A_in_stream");
+    hls::stream<data_t> B_out_stream("B_out_stream");
+
+    printf("[TB] Writing %d elements to HLS...\n", TOTAL_ELEMENTS);
+    for (int i = 0; i < TOTAL_ELEMENTS; i++) {
+        A_in_stream.write(A_input_vector[i]);
+    }
+
+    printf("[TB] Running HLS Kernel...\n");
+    architecture_top_level(A_in_stream, B_out_stream);
+
+    printf("[TB] Verifying results...\n");
+    
+    // 1. Διαβάζουμε όλο το αποτέλεσμα του Hardware σε έναν πίνακα
+    std::vector<data_t> B_hw_vector(TOTAL_ELEMENTS);
+    for (int i = 0; i < TOTAL_ELEMENTS; i++) {
+        B_hw_vector[i] = B_out_stream.read();
+    }
+
+    int errors = 0;
+    int golden_index = 0;
+
+    // 2. Έλεγχος στα εσωτερικά πίξελ
+    for (int i = 1; i < ROWS - 1; i++) {
+        for (int j = 1; j < COLUMNS - 1; j++) {
+            
+            // Το Hardware βγάζει το αποτέλεσμα 1024 κύκλους (1 ολόκληρη γραμμή) καθυστερημένα!
+            int center_index = i * COLUMNS + j;
+            data_t hls_result = B_hw_vector[center_index + 1024]; 
+            
+            data_t golden_result = B_golden_vector[golden_index];
+            golden_index++;
+
+            if (std::abs(hls_result - golden_result) > 0.001f) {
                 errors++;
-                if (errors <= 5) { // Τυπώνουμε τα 5 πρώτα λάθη για debugging
-                    std::cout << "Error at (" << i << "," << j << "): "
-                              << "HW = " << hw_val << ", SW = " << sw_val << std::endl;
+                if (errors <= 5) {
+                    printf("  [ERROR] Mismatch at (Row: %d, Col: %d) -> HLS: %f, SW: %f\n",
+                           i, j, hls_result, golden_result);
                 }
             }
         }
     }
 
-    // ΒΗΜΑ 6: Αποτέλεσμα Testbench
     if (errors == 0) {
-        std::cout << "=======================================" << std::endl;
-        std::cout << "  TEST PASSED! 0 errors detected.      " << std::endl;
-        std::cout << "=======================================" << std::endl;
-        return 0; // Return 0 σημαίνει επιτυχία για το εργαλείο HLS
+        printf("\n=======================================\n");
+        printf("  TEST PASSED! 0 errors detected.      \n");
+        printf("=======================================\n");
+        return 0;
     } else {
-        std::cout << "=======================================" << std::endl;
-        std::cout << "  TEST FAILED! " << errors << " errors." << std::endl;
-        std::cout << "=======================================" << std::endl;
-        return 1; // Return 1 σημαίνει αποτυχία
+        printf("\n=======================================\n");
+        printf("  TEST FAILED! %d mismatches found.    \n", errors);
+        printf("=======================================\n");
+        return 1;
     }
 }

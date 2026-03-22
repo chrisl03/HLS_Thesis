@@ -12,8 +12,8 @@ const int ORIG_TOTAL = ORIG_ROWS * ORIG_COLS;
 
 
 const int FIFO_0_DEPTH = 1023; //instead of 1023, due to the padding
-const int FIFO_1_DEPTH = 4;
-const int FIFO_2_DEPTH = 4;
+const int FIFO_1_DEPTH = 1;
+const int FIFO_2_DEPTH = 1;
 const int FIFO_3_DEPTH = 1023;
 
 
@@ -40,34 +40,18 @@ void forwarding_module(hls::stream<data_t>& in,
         
         int ptr = 0;
         
-        // filling the buffs
-        for (int i = 0; i < T_DEPTH; i++) {
-            #pragma HLS PIPELINE II=1
-            buffer[i] = in.read();
-        }
-        
-        // read new inputs and send to outp
-        for (int i = 0; i < T_TOTAL_ELEMENTS - T_DEPTH; i++) {
+        for (int i = 0; i < T_TOTAL_ELEMENTS; i++) {
             #pragma HLS PIPELINE II=1
             data_t new_val = in.read();
-            data_t out_val = buffer[ptr]; 
+            
+            // Το μυστικό: Αν δεν έχουν περάσει T_DEPTH κύκλοι, βγάλε 0 (dummy data).
+            // Αλλιώς, βγάλε το καθυστερημένο δεδομένο από τον κυκλικό buffer.
+            data_t out_val = (i < T_DEPTH) ? (data_t)0.0f : buffer[ptr]; 
             
             out_to_next_fw.write(out_val);
             out_to_pe.write(out_val);
             
             buffer[ptr] = new_val;
-            // Buffer implemented as a cycle
-            ptr = (ptr == T_DEPTH - 1) ? 0 : ptr + 1;
-        }
-        
-        // emptying
-        for (int i = 0; i < T_DEPTH; i++) {
-            #pragma HLS PIPELINE II=1
-            data_t out_val = buffer[ptr];
-            
-            out_to_next_fw.write(out_val);
-            out_to_pe.write(out_val);
-            
             ptr = (ptr == T_DEPTH - 1) ? 0 : ptr + 1;
         }
     }
@@ -81,26 +65,15 @@ void terminal_forwarding_module(hls::stream<data_t>& in,
     #pragma HLS BIND_STORAGE variable=buffer type=ram_2p impl=bram
     int ptr = 0;
     
-    for (int i = 0; i < T_DEPTH; i++) {
-        #pragma HLS PIPELINE II=1
-        buffer[i] = in.read();
-    }
-    
-    for (int i = 0; i < T_TOTAL_ELEMENTS - T_DEPTH; i++) {
+    for (int i = 0; i < T_TOTAL_ELEMENTS; i++) {
         #pragma HLS PIPELINE II=1
         data_t new_val = in.read();
-        data_t out_val = buffer[ptr];
         
-        //only diff with regular FW is that the outp are only sent to PE
+        data_t out_val = (i < T_DEPTH) ? (data_t)0.0f : buffer[ptr];
+        
         out_to_pe.write(out_val);
         
         buffer[ptr] = new_val;
-        ptr = (ptr == T_DEPTH - 1) ? 0 : ptr + 1;
-    }
-    
-    for (int i = 0; i < T_DEPTH; i++) {
-        #pragma HLS PIPELINE II=1
-        out_to_pe.write(buffer[ptr]);
         ptr = (ptr == T_DEPTH - 1) ? 0 : ptr + 1;
     }
 }
