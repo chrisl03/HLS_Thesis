@@ -5,17 +5,19 @@
 #include "hls_math.h"  
 #include "hls_vector.h"
 
+const int k = 2;
+
 typedef float data_t;
-typedef hls::vector<data_t, 2> data_vec_t; // 2 floats in one input bcs k=2
+typedef hls::vector<data_t, k> data_vec_t; // 2 floats in one input bcs k=2
 
 const int ROWS = 16;
 const int COLUMNS = 1024;
 
-const int VECTORS_PER_ROW = COLUMNS / 2;     // 512
-const int TOTAL_VECTORS = (ROWS * COLUMNS) / 2; // 8192
+const int VECTORS_PER_ROW = COLUMNS / k;     // 512
+const int TOTAL_VECTORS = (ROWS * COLUMNS) / k; // 8192
 
 // Fifo depth = 1024/2   (W/k)
-const int FIFO_ROW_DEPTH = 512;
+const int FIFO_ROW_DEPTH = COLUMNS / k;
 
 // FW are same as in SODA_no_lcs.cpp only dataaa typesare diff, comments are in that file
 
