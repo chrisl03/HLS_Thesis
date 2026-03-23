@@ -1,0 +1,126 @@
+#include <stdio.h>   
+#include <iostream>
+#include <vector>
+#include <cmath>
+#include "hls_stream.h" 
+#include "hls_vector.h"
+
+typedef float data_t;
+typedef hls::vector<data_t, 2> data_vec_t; 
+
+const int ROWS = 16;
+const int COLUMNS = 1024;
+const int TOTAL_ELEMENTS = ROWS * COLUMNS;
+const int TOTAL_VECTORS = TOTAL_ELEMENTS / 2; // 8192
+
+// only change vector inst of float
+void architecture_top_level(hls::stream<data_vec_t> &A_in, hls::stream<data_vec_t> &B_out);
+
+// Golden, same as k1
+void compute_golden(std::vector<data_t>& A_vec, std::vector<data_t>& B_golden_vec) {
+    printf("  [Golden] Starting golden computation...\n");
+    B_golden_vec.clear();
+
+    for (int i = 1; i < ROWS - 1; i++) {
+        for (int j = 1; j < COLUMNS - 1; j++) {
+            
+            data_t a10  = A_vec[(i + 1) * COLUMNS + j]; 
+            data_t a01  = A_vec[i * COLUMNS + (j + 1)]; 
+            data_t a00  = A_vec[i * COLUMNS + j];       
+            data_t a0m1 = A_vec[i * COLUMNS + (j - 1)]; 
+            data_t am10 = A_vec[(i - 1) * COLUMNS + j]; 
+
+            data_t res_0 = a00 - a0m1;
+            data_t res_1 = a00 - a01;
+            data_t res_2 = a00 - am10;
+            data_t res_3 = a00 - a10;
+
+            data_t b_val = (res_0 * res_0) + (res_1 * res_1) +
+                           (res_2 * res_2) + (res_3 * res_3);
+
+            B_golden_vec.push_back(b_val);
+        }
+    }
+    printf("  [Golden] Finished. Produced %zu valid outputs.\n", B_golden_vec.size());
+}
+
+// TESTBENCH 
+int main() {
+    printf("[TB] Starting Testbench for k=2...\n");
+
+    std::vector<data_t> A_input_vector(TOTAL_ELEMENTS);
+    std::vector<data_t> B_golden_vector;
+    
+    // 1d filling as before
+    for (int i = 0; i < TOTAL_ELEMENTS; i++) {
+        A_input_vector[i] = (data_t)(i % 256) / 10.0f;
+    }
+
+    compute_golden(A_input_vector, B_golden_vector);
+
+    // Τstrems hav vec instead of float
+    hls::stream<data_vec_t> A_in_stream("A_in_stream");
+    hls::stream<data_vec_t> B_out_stream("B_out_stream");
+
+    // packing floatts to vectors b4 writing
+    printf("[TB] Packing and Writing %d vectors to HLS...\n", TOTAL_VECTORS + 1); // +1 εδώ
+    for (int i = 0; i < TOTAL_VECTORS; i++) {
+        data_vec_t tmp_vec;
+        tmp_vec[0] = A_input_vector[i * 2];       
+        tmp_vec[1] = A_input_vector[i * 2 + 1];   
+        A_in_stream.write(tmp_vec);
+    }
+    //trash data to flush the last result
+    data_vec_t dummy_vec;
+    dummy_vec[0] = 0.0f; dummy_vec[1] = 0.0f;
+    A_in_stream.write(dummy_vec);
+
+    printf("[TB] Running HLS Kernel...\n");
+    architecture_top_level(A_in_stream, B_out_stream);
+
+    printf("[TB] Verifying results...\n");
+    
+    std::vector<data_t> B_hw_vector((TOTAL_VECTORS + 1) * 2);
+    
+    // unpacking
+    for (int i = 0; i < TOTAL_VECTORS+1; i++) {
+        data_vec_t tmp_vec = B_out_stream.read();
+        B_hw_vector[i * 2] = tmp_vec[0];       // Even pixel
+        B_hw_vector[i * 2 + 1] = tmp_vec[1];   // Odd pixel
+    }
+
+    int errors = 0;
+    int golden_index = 0;
+
+    // exactly same checking process
+    for (int i = 1; i < ROWS - 1; i++) {
+        for (int j = 1; j < COLUMNS - 1; j++) {
+            
+            int center_index = i * COLUMNS + j;
+            data_t hls_result = B_hw_vector[center_index + 1024 + 2]; 
+            
+            data_t golden_result = B_golden_vector[golden_index];
+            golden_index++;
+
+            if (std::abs(hls_result - golden_result) > 0.001f) {
+                errors++;
+                if (errors <= 5) {
+                    printf("  [ERROR] Mismatch at (Row: %d, Col: %d) -> HLS: %f, SW: %f\n",
+                           i, j, hls_result, golden_result);
+                }
+            }
+        }
+    }
+
+    if (errors == 0) {
+        printf("\n=======================================\n");
+        printf("  TEST PASSED! 0 errors detected.      \n");
+        printf("=======================================\n");
+        return 0;
+    } else {
+        printf("\n=======================================\n");
+        printf("  TEST FAILED! %d mismatches found.    \n", errors);
+        printf("=======================================\n");
+        return 1;
+    }
+}
