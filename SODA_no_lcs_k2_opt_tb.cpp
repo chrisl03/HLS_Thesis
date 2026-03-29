@@ -3,24 +3,20 @@
 #include <vector>
 #include <cmath>
 #include "hls_stream.h" 
+#include "hls_vector.h"
 
-const int k = 2;
 typedef float data_t;
+typedef hls::vector<data_t, 2> data_vec_t; 
 
 const int ROWS = 16;
 const int COLUMNS = 1024;
 const int TOTAL_ELEMENTS = ROWS * COLUMNS;
-const int TOTAL_VECTORS = TOTAL_ELEMENTS / k; // 8192
+const int TOTAL_VECTORS = TOTAL_ELEMENTS / 2; // 8192
 
-// Δήλωση της νέας συνάρτησης του Hardware
-void architecture_top_level(hls::stream<data_t> &A_in_0, 
-                            hls::stream<data_t> &A_in_1, 
-                            hls::stream<data_t> &B_out_0,
-                            hls::stream<data_t> &B_out_1);
+// only change vector inst of float
+void architecture_top_level(hls::stream<data_vec_t> &A_in, hls::stream<data_vec_t> &B_out);
 
-// ==========================================
-// GOLDEN MODEL (C++ Software Reference)
-// ==========================================
+// Golden, same as k1
 void compute_golden(std::vector<data_t>& A_vec, std::vector<data_t>& B_golden_vec) {
     printf("  [Golden] Starting golden computation...\n");
     B_golden_vec.clear();
@@ -48,62 +44,59 @@ void compute_golden(std::vector<data_t>& A_vec, std::vector<data_t>& B_golden_ve
     printf("  [Golden] Finished. Produced %zu valid outputs.\n", B_golden_vec.size());
 }
 
-// ==========================================
-// MAIN TESTBENCH
-// ==========================================
+// TESTBENCH 
 int main() {
-    printf("[TB] Starting Pure SODA Testbench for k=2...\n");
+    printf("[TB] Starting Testbench for k=2...\n");
 
     std::vector<data_t> A_input_vector(TOTAL_ELEMENTS);
     std::vector<data_t> B_golden_vector;
     
-    // Γέμισμα 1D πίνακα
+    // 1d filling as before
     for (int i = 0; i < TOTAL_ELEMENTS; i++) {
         A_input_vector[i] = (data_t)(i % 256) / 10.0f;
     }
 
     compute_golden(A_input_vector, B_golden_vector);
 
-    // 4 Ξεχωριστά streams για την Pure SODA αρχιτεκτονική
-    hls::stream<data_t> A_in_0("A_in_0");
-    hls::stream<data_t> A_in_1("A_in_1");
-    hls::stream<data_t> B_out_0("B_out_0");
-    hls::stream<data_t> B_out_1("B_out_1");
+    // Τstrems hav vec instead of float
+    hls::stream<data_vec_t> A_in_stream("A_in_stream");
+    hls::stream<data_vec_t> B_out_stream("B_out_stream");
 
-    printf("[TB] Writing %d dual-elements to HLS...\n", TOTAL_VECTORS);
+    // packing floatts to vectors b4 writing
+    printf("[TB] Packing and Writing %d vectors to HLS...\n", TOTAL_VECTORS + 1); // +1 εδώ
     for (int i = 0; i < TOTAL_VECTORS; i++) {
-        A_in_0.write(A_input_vector[i * 2]);       // Ζυγά πίξελ (Chain 0)
-        A_in_1.write(A_input_vector[i * 2 + 1]);   // Μονά πίξελ (Chain 1)
+        data_vec_t tmp_vec;
+        tmp_vec[0] = A_input_vector[i * 2];       
+        tmp_vec[1] = A_input_vector[i * 2 + 1];   
+        A_in_stream.write(tmp_vec);
     }
-
-    // Pipeline Flush: Στέλνουμε 1 έξτρα "κενό" κύκλο για να σπρώξει το τελευταίο πίξελ
-    A_in_0.write(0.0f);
-    A_in_1.write(0.0f);
+    //trash data to flush the last result
+    data_vec_t dummy_vec;
+    dummy_vec[0] = 0.0f; dummy_vec[1] = 0.0f;
+    A_in_stream.write(dummy_vec);
 
     printf("[TB] Running HLS Kernel...\n");
-    architecture_top_level(A_in_0, A_in_1, B_out_0, B_out_1);
+    architecture_top_level(A_in_stream, B_out_stream);
 
     printf("[TB] Verifying results...\n");
     
-    // Πίνακας για τα αποτελέσματα του Hardware (χωράει και το έξτρα Flush)
     std::vector<data_t> B_hw_vector((TOTAL_VECTORS + 1) * 2);
     
-    // Ξεπακετάρισμα από τα 2 streams
-    for (int i = 0; i < TOTAL_VECTORS + 1; i++) {
-        B_hw_vector[i * 2]     = B_out_0.read();
-        B_hw_vector[i * 2 + 1] = B_out_1.read();
+    // unpacking
+    for (int i = 0; i < TOTAL_VECTORS+1; i++) {
+        data_vec_t tmp_vec = B_out_stream.read();
+        B_hw_vector[i * 2] = tmp_vec[0];       // Even pixel
+        B_hw_vector[i * 2 + 1] = tmp_vec[1];   // Odd pixel
     }
 
     int errors = 0;
     int golden_index = 0;
 
+    // exactly same checking process
     for (int i = 1; i < ROWS - 1; i++) {
         for (int j = 1; j < COLUMNS - 1; j++) {
             
             int center_index = i * COLUMNS + j;
-            
-            // Το συνολικό Pipeline Delay παραμένει ακριβώς το ίδιο: 
-            // 1 Row (1024 πίξελ) + 1 Vector Cycle (2 πίξελ) = 1026
             data_t hls_result = B_hw_vector[center_index + 1024 + 2]; 
             
             data_t golden_result = B_golden_vector[golden_index];

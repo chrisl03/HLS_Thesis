@@ -1,181 +1,151 @@
-#include <stdio.h>  
 #include "ap_int.h"    
 #include "ap_fixed.h" 
 #include "hls_stream.h"
 #include "hls_math.h"  
-#include "hls_vector.h"
 
 const int k = 2;
 
 typedef float data_t;
-typedef hls::vector<data_t, k> data_vec_t; // 2 floats in one input bcs k=2
 
 const int ROWS = 16;
 const int COLUMNS = 1024;
 
-const int VECTORS_PER_ROW = COLUMNS / k;     // 512
+const int VECTORS_PER_ROW = COLUMNS / k;        // 512 for k=2
 const int TOTAL_VECTORS = (ROWS * COLUMNS) / k; // 8192
 
-// Fifo depth = 1024/2   (W/k)
-const int FIFO_ROW_DEPTH = COLUMNS / k;
 
-// FW are same as in SODA_no_lcs.cpp only dataaa typesare diff, comments are in that file
-
-template <int T_DEPTH, int T_TOTAL_VECTORS>
-void forwarding_module_vec(hls::stream<data_vec_t>& in, 
-                           hls::stream<data_vec_t>& out_to_next_fw,
-                           hls::stream<data_vec_t>& out_to_pe) { 
-    if (T_DEPTH == 0) {
-        for (int i = 0; i < T_TOTAL_VECTORS; i++) {
-            #pragma HLS PIPELINE II=1
-            data_vec_t val = in.read();
-            out_to_next_fw.write(val);
-            out_to_pe.write(val);
-        }
-    } else {
-        data_vec_t buffer[T_DEPTH == 0 ? 1 : T_DEPTH];
-        #pragma HLS BIND_STORAGE variable=buffer type=ram_2p impl=bram
-        int ptr = 0;
+template <int T_DEPTH, int T_ITER>
+void forwarding_module(hls::stream<data_t>& in, hls::stream<data_t>& out_next_fw, hls::stream<data_t>& out_pe) { 
+    // if depth is 0 make it 1
+    data_t buffer[T_DEPTH == 0 ? 1 : T_DEPTH];
+    #pragma HLS BIND_STORAGE variable=buffer type=ram_2p 
+    int ptr = 0;
+    
+    // Fifo or ff with reuse buff
+    for (int i = 0; i < T_ITER; i++) {
+        #pragma HLS PIPELINE II=1
+        data_t new_val = in.read();
+        data_t out_val = (i < T_DEPTH) ? 0.0f : buffer[ptr]; 
         
-        data_vec_t zero_vec;
-        zero_vec[0] = 0.0f; zero_vec[1] = 0.0f;
-
-        for (int i = 0; i < T_TOTAL_VECTORS; i++) {
-            #pragma HLS PIPELINE II=1
-            data_vec_t new_val = in.read();
-            
-            data_vec_t out_val = (i < T_DEPTH) ? zero_vec : buffer[ptr]; 
-            
-            out_to_next_fw.write(out_val);
-            out_to_pe.write(out_val);
-            
-            buffer[ptr] = new_val;
-            ptr = (ptr == T_DEPTH - 1) ? 0 : ptr + 1;
-        }
+        out_next_fw.write(out_val);
+        out_pe.write(out_val);
+        
+        buffer[ptr] = new_val;
+        // if ptr is tdepth-1 then make it 0, else increment
+        ptr = (ptr == T_DEPTH - 1) ? 0 : ptr + 1;
     }
 }
 
-template <int T_DEPTH, int T_TOTAL_VECTORS>
-void terminal_forwarding_module_vec(hls::stream<data_vec_t>& in, 
-                                    hls::stream<data_vec_t>& out_to_pe) {
-    data_vec_t buffer[T_DEPTH == 0 ? 1 : T_DEPTH];
-    #pragma HLS BIND_STORAGE variable=buffer type=ram_2p impl=bram
+
+//terminal module same as regular, but it only writes to one output
+template <int T_DEPTH, int T_ITER>
+void terminal_forwarding_module(hls::stream<data_t>& in, hls::stream<data_t>& out_pe) {
+    data_t buffer[T_DEPTH == 0 ? 1 : T_DEPTH];
+    #pragma HLS BIND_STORAGE variable=buffer type=ram_2p
     int ptr = 0;
     
-    data_vec_t zero_vec;
-    zero_vec[0] = 0.0f; zero_vec[1] = 0.0f;
-    
-    for (int i = 0; i < T_TOTAL_VECTORS; i++) {
+    for (int i = 0; i < T_ITER; i++) {
         #pragma HLS PIPELINE II=1
-        data_vec_t new_val = in.read();
+        data_t new_val = in.read();
+        data_t out_val = (i < T_DEPTH) ? 0.0f : buffer[ptr];
         
-        data_vec_t out_val = (i < T_DEPTH) ? zero_vec : buffer[ptr];
-        
-        out_to_pe.write(out_val);
+        out_pe.write(out_val);
         
         buffer[ptr] = new_val;
         ptr = (ptr == T_DEPTH - 1) ? 0 : ptr + 1;
     }
 }
 
-template <int T_ITERATIONS>
-void compute_kernel_k2(hls::stream<data_vec_t>& in_down, 
-                       hls::stream<data_vec_t>& in_mid,  
-                       hls::stream<data_vec_t>& in_up,   
-                       hls::stream<data_vec_t>& out_B) {
-
-    //Whole point is that we will be calculating each result with a delay of one cycle
-    //because PE1 requires the element on the right whch hasnt entered yet
-
-    // register for current data containing the middle column of the cross
-    data_vec_t v_mid_reg, v_down_reg, v_up_reg;
-    // reg for data on the left (P0 requires n-1 element), no need for up/down they aree useless
-    data_vec_t v_mid_prev; 
-
-    v_mid_reg[0] = 0; v_mid_reg[1] = 0;
-    v_mid_prev[0] = 0; v_mid_prev[1] = 0;
-
-    for (int i = 0; i < T_ITERATIONS; i++) {
+//
+template <int T_ITER>
+void split_1_to_2(hls::stream<data_t>& in, hls::stream<data_t>& out1, hls::stream<data_t>& out2) {
+    for (int i = 0; i < T_ITER; i++) {
         #pragma HLS PIPELINE II=1
-
-        // reg that will be used for the data on the right (P1 requires n+2 that comes in the next cycle)
-        data_vec_t v_down_new = in_down.read();
-        data_vec_t v_mid_new  = in_mid.read();
-        data_vec_t v_up_new   = in_up.read();
-
-        // current data is actually the data from the prev cycle
-        data_vec_t v_down_curr = v_down_reg;
-        data_vec_t v_mid_curr  = v_mid_reg;
-        data_vec_t v_up_curr   = v_up_reg;
-
-        // PE0 for even pixels
-        data_t a00_0  = v_mid_curr[0];      // Center
-        data_t a01_0  = v_mid_curr[1];      // Right  
-        data_t a0m1_0 = v_mid_prev[1];      // Left   (from prev cycle)
-        data_t a10_0  = v_down_curr[0];     // Down
-        data_t am10_0 = v_up_curr[0];       // Up
-
-        data_t res_0_0 = a00_0 - a0m1_0;
-        data_t res_1_0 = a00_0 - a01_0;
-        data_t res_2_0 = a00_0 - am10_0;
-        data_t res_3_0 = a00_0 - a10_0;
-        data_t b_val_0 = (res_0_0 * res_0_0) + (res_1_0 * res_1_0) +
-                         (res_2_0 * res_2_0) + (res_3_0 * res_3_0);
-
-        // PE1 for odd pixels
-        data_t a00_1  = v_mid_curr[1];      // Center
-        data_t a01_1  = v_mid_new[0];       // Right  (from next cycle)
-        data_t a0m1_1 = v_mid_curr[0];      // Left 
-        data_t a10_1  = v_down_curr[1];     // Down
-        data_t am10_1 = v_up_curr[1];       // Up
-
-        data_t res_0_1 = a00_1 - a0m1_1;
-        data_t res_1_1 = a00_1 - a01_1;
-        data_t res_2_1 = a00_1 - am10_1;
-        data_t res_3_1 = a00_1 - a10_1;
-        data_t b_val_1 = (res_0_1 * res_0_1) + (res_1_1 * res_1_1) +
-                         (res_2_1 * res_2_1) + (res_3_1 * res_3_1);
-
-        // combining 2 vectors into one
-        data_vec_t out_vec;
-        out_vec[0] = b_val_0;
-        out_vec[1] = b_val_1;
-        out_B.write(out_vec);
-
-        // regs switch to next value
-        v_mid_prev = v_mid_curr;
-        v_mid_reg  = v_mid_new;
-        v_down_reg = v_down_new;
-        v_up_reg   = v_up_new;
+        data_t val = in.read();
+        out1.write(val);
+        out2.write(val);
     }
 }
 
-void architecture_top_level(hls::stream<data_vec_t> &A_in, 
-                            hls::stream<data_vec_t> &B_out) {
+
+template <int T_ITER>
+void compute_pe(hls::stream<data_t>& in_down, 
+                hls::stream<data_t>& in_right,  
+                hls::stream<data_t>& in_center,  
+                hls::stream<data_t>& in_left,   
+                hls::stream<data_t>& in_up,     
+                hls::stream<data_t>& out_res) {
+    for (int i = 0; i < T_ITER; i++) {
+        #pragma HLS PIPELINE II=1
+        
+        data_t down   = in_down.read();
+        data_t right  = in_right.read();
+        data_t center = in_center.read();
+        data_t left   = in_left.read();
+        data_t up     = in_up.read();
+
+        data_t res_0 = center - left;
+        data_t res_1 = center - right;
+        data_t res_2 = center - up;
+        data_t res_3 = center - down;
+        data_t b_val = (res_0 * res_0) + (res_1 * res_1) +
+                       (res_2 * res_2) + (res_3 * res_3);
+
+        out_res.write(b_val);
+    }
+}
+
+
+
+
+
+void architecture_top_level(hls::stream<data_t> &A_in_0, 
+                            hls::stream<data_t> &A_in_1, 
+                            hls::stream<data_t> &B_out_0,
+                            hls::stream<data_t> &B_out_1) {
     #pragma HLS DATAFLOW
 
-    // streams between FW
-    hls::stream<data_vec_t> fw_direct_to_mid, fw_mid_to_up;
-    #pragma HLS STREAM variable=fw_direct_to_mid depth=4
-    #pragma HLS STREAM variable=fw_mid_to_up depth=4
+    const int ITER = TOTAL_VECTORS + 1;
 
-    // Streams to kernel
-    hls::stream<data_vec_t> pe_in_down, pe_in_mid, pe_in_up;
-    #pragma HLS STREAM variable=pe_in_down depth=4
-    #pragma HLS STREAM variable=pe_in_mid depth=4
-    #pragma HLS STREAM variable=pe_in_up depth=4
+    // Reuse chain 0 streams
+    hls::stream<data_t> c0_fw1_next("c0_fw1_next"), pe0_down("pe0_down");
+    hls::stream<data_t> c0_fw2_next("c0_fw2_next"), pe1_right("pe1_right");
+    hls::stream<data_t> c0_fw3_next("c0_fw3_next"), c0_split("c0_split");
+    hls::stream<data_t> pe0_center("pe0_center"), pe1_left("pe1_left");
+    hls::stream<data_t> pe0_up("pe0_up");
+    
+    #pragma HLS STREAM variable=c0_fw1_next depth=4
+    #pragma HLS STREAM variable=c0_fw2_next depth=4
+    #pragma HLS STREAM variable=c0_fw3_next depth=4
+    #pragma HLS STREAM variable=c0_split depth=4
 
+    // Reuse chain 1 streams
+    hls::stream<data_t> c1_fw1_next("c1_fw1_next"), pe1_down("pe1_down");
+    hls::stream<data_t> c1_fw2_next("c1_fw2_next"), c1_split("c1_split");
+    hls::stream<data_t> pe1_center("pe1_center"), pe0_right("pe0_right");
+    hls::stream<data_t> c1_fw3_next("c1_fw3_next"), pe0_left("pe0_left");
+    hls::stream<data_t> pe1_up("pe1_up");
 
-    // Direct Forward  (Down)
-    forwarding_module_vec<0, TOTAL_VECTORS+1>(A_in, fw_direct_to_mid, pe_in_down);
+    #pragma HLS STREAM variable=c1_fw1_next depth=4
+    #pragma HLS STREAM variable=c1_fw2_next depth=4
+    #pragma HLS STREAM variable=c1_fw3_next depth=4
+    #pragma HLS STREAM variable=c1_split depth=4
 
-    // Middle row - latency 512
-    forwarding_module_vec<FIFO_ROW_DEPTH, TOTAL_VECTORS+1>(fw_direct_to_mid, fw_mid_to_up, pe_in_mid);
+    // Reuse chain 0
+    forwarding_module<1, ITER>(A_in_0, c0_fw1_next, pe0_down);
+    forwarding_module<VECTORS_PER_ROW - 1, ITER>(c0_fw1_next, c0_fw2_next, pe1_right);
+    forwarding_module<1, ITER>(c0_fw2_next, c0_fw3_next, c0_split);
+    split_1_to_2<ITER>(c0_split, pe0_center, pe1_left); 
+    terminal_forwarding_module<VECTORS_PER_ROW, ITER>(c0_fw3_next, pe0_up);
 
-    // upper row - latency 512
-    terminal_forwarding_module_vec<FIFO_ROW_DEPTH, TOTAL_VECTORS+1>(fw_mid_to_up, pe_in_up);
+    // Reuse chain 1
+    forwarding_module<1, ITER>(A_in_1, c1_fw1_next, pe1_down);
+    forwarding_module<VECTORS_PER_ROW, ITER>(c1_fw1_next, c1_fw2_next, c1_split);
+    split_1_to_2<ITER>(c1_split, pe1_center, pe0_right); 
+    forwarding_module<1, ITER>(c1_fw2_next, c1_fw3_next, pe0_left);
+    terminal_forwarding_module<VECTORS_PER_ROW - 1, ITER>(c1_fw3_next, pe1_up);
 
-    // comp kernel
-    compute_kernel_k2<TOTAL_VECTORS+1>(pe_in_down, pe_in_mid, pe_in_up, B_out);
+    // PEs
+    compute_pe<ITER>(pe0_down, pe0_right, pe0_center, pe0_left, pe0_up, B_out_0);
+    compute_pe<ITER>(pe1_down, pe1_right, pe1_center, pe1_left, pe1_up, B_out_1);
 }
-//everything is TOTALVECTORS+1 to flush the last values inside the registers
