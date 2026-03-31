@@ -7,6 +7,10 @@ const int k = 2;
 typedef float data_t;
 
 // needed for axi to read/write 2 floats in 1 cycle
+struct float16 {
+    data_t data[16];
+};
+
 struct float2 {
     data_t f0;
     data_t f1;
@@ -28,20 +32,31 @@ const int TOTAL_ITERATIONS = TOTAL_VECTORS + SODA_DELAY; // 8705
 
 
 // LOAD MODULE
-void load_input(float2* in_mem, hls::stream<data_t>& out_0, hls::stream<data_t>& out_1) {
-    // Τotal vectors + delay for first
+void load_input(float16* in_mem, hls::stream<data_t>& out_0, hls::stream<data_t>& out_1) {
+    float16 chunk; // register that holds 16 floats
+    
+    // Τotal vectors + delay for first outp
     for (int i = 0; i < TOTAL_ITERATIONS; i++) {
         #pragma HLS PIPELINE II=1
-        float2 temp;
         
         if (i < TOTAL_VECTORS) {
-            temp = in_mem[i]; 
+            int burst_index = i / 8;  // in which pack of 16 floats are we
+            int word_index  = i % 8;  // which pair of floats inside the pack are we using
+            
+            // loading from mem only once every 8 cycles
+            if (word_index == 0) {
+                chunk = in_mem[burst_index]; 
+            }
+            
+            // writing 2 floats
+            out_0.write(chunk.data[word_index * 2]);
+            out_1.write(chunk.data[word_index * 2 + 1]);
+            
         } else {
-            temp.f0 = 0.0f; temp.f1 = 0.0f; // Dummy data for flushing the pipeline
+            // Pipeline Flushing
+            out_0.write(0.0f);
+            out_1.write(0.0f);
         }
-        
-        out_0.write(temp.f0);
-        out_1.write(temp.f1);
     }
 }
 
@@ -203,12 +218,14 @@ void store_output(hls::stream<data_t>& in_0, hls::stream<data_t>& in_1, float2* 
 }
 
 // Top level
-void architecture_top_level(float2* A_in_mem, float2* B_out_mem) {
+void architecture_top_level(float16* A_in_mem, float2* B_out_mem) {
     
     // depth of B_out_mem is KERNEL_ITERATIONS / 2 because we store structs of 2 floats (float2)
-    #pragma HLS INTERFACE m_axi port=A_in_mem bundle=gmem0 depth=TOTAL_VECTORS
+    // depth of input is vectors/8 because by loading 512 bits we load 8 pairs of inputs
+    #pragma HLS INTERFACE m_axi port=A_in_mem bundle=gmem0 depth=TOTAL_VECTORS/8
     #pragma HLS INTERFACE m_axi port=B_out_mem bundle=gmem1 depth=(KERNEL_ITERATIONS/2)
     #pragma HLS INTERFACE s_axilite port=return
+    #pragma HLS AGGREGATE variable=A_in_mem compact=auto
 
     #pragma HLS DATAFLOW
 

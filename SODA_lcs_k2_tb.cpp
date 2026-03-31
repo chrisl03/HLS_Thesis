@@ -5,10 +5,15 @@
 
 typedef float data_t;
 
-// Το ίδιο struct που ορίσαμε στο Hardware
+// Το παλιό struct για την έξοδο (64-bit)
 struct float2 {
     data_t f0;
     data_t f1;
+};
+
+// Το ΝΕΟ θηριώδες struct για την είσοδο (512-bit)
+struct float16 {
+    data_t data[16];
 };
 
 const int ORIG_ROWS = 16;
@@ -16,24 +21,26 @@ const int ORIG_COLS = 1024;
 const int ORIG_TOTAL = ORIG_ROWS * ORIG_COLS; // 16384
 const int TOTAL_VECTORS = ORIG_TOTAL / 2;     // 8192
 
+// Πόσα πακέτα των 512-bit θα στείλουμε συνολικά;
+// 16384 πίξελ / 16 πίξελ ανά πακέτο = 1024 πακέτα!
+const int BURSTS_512BIT = ORIG_TOTAL / 16; 
+
 const int KERNEL_ROWS = ORIG_ROWS - 2; 
 const int KERNEL_COLS = ORIG_COLS - 2; 
 const int KERNEL_ITERATIONS = KERNEL_ROWS * KERNEL_COLS; // 14308
 
-// Δήλωση της συνάρτησης του Hardware
-void architecture_top_level(float2* A_in_mem, data_t* B_out_mem);
+// Η νέα δήλωση του Hardware (Η είσοδος είναι πλέον float16)
+void architecture_top_level(float16* A_in_mem, float2* B_out_mem);
 
 // ==========================================
-// GOLDEN MODEL (C++ Software Reference)
+// GOLDEN MODEL (C++ Software Reference - ΑΜΕΤΑΒΛΗΤΟ!)
 // ==========================================
 void compute_golden(std::vector<data_t>& A_vec, std::vector<data_t>& B_golden_vec) {
     printf("  [Golden] Starting golden computation...\n");
     B_golden_vec.clear();
 
-    // Υπολογίζουμε ΜΟΝΟ τον καθαρό εσωτερικό πυρήνα (χωρίς τα borders)
     for (int i = 1; i < ORIG_ROWS - 1; i++) {
         for (int j = 1; j < ORIG_COLS - 1; j++) {
-            
             data_t a00  = A_vec[i * ORIG_COLS + j];       
             data_t a10  = A_vec[(i + 1) * ORIG_COLS + j]; 
             data_t a01  = A_vec[i * ORIG_COLS + (j + 1)]; 
@@ -58,55 +65,55 @@ void compute_golden(std::vector<data_t>& A_vec, std::vector<data_t>& B_golden_ve
 // MAIN TESTBENCH
 // ==========================================
 int main() {
-    printf("[TB] Starting LCS SODA Testbench for k=2...\n");
+    printf("[TB] Starting 512-bit Gearbox SODA Testbench...\n");
 
-    // 1. Δημιουργία των 1D πινάκων Software
     std::vector<data_t> A_flat_vector(ORIG_TOTAL);
     std::vector<data_t> B_golden_vector;
     
-    // Γέμισμα με τυχαίες τιμές
     for (int i = 0; i < ORIG_TOTAL; i++) {
         A_flat_vector[i] = (data_t)(i % 256) / 10.0f;
     }
 
-    // Τρέχουμε το Software Golden Model
     compute_golden(A_flat_vector, B_golden_vector);
 
-    // 2. Προετοιμασία μνήμης για το Hardware (AXI Simulation)
-    // Δεσμεύουμε μνήμη τύπου float2 για την είσοδο και data_t για την έξοδο
-    float2* A_in_hw = new float2[TOTAL_VECTORS];
-    data_t* B_out_hw = new data_t[KERNEL_ITERATIONS];
+    // 2. Προετοιμασία μνήμης για το Hardware
+    // Προσοχή: Δεσμεύουμε 1024 πακέτα float16!
+    float16* A_in_hw = new float16[BURSTS_512BIT];
+    float2* B_out_hw = new float2[KERNEL_ITERATIONS / 2];
 
-    // Συσκευασία (Packing) 2 floats σε 1 struct float2
-    printf("[TB] Packing 16384 floats into 8192 float2 structs...\n");
-    for (int i = 0; i < TOTAL_VECTORS; i++) {
-        A_in_hw[i].f0 = A_flat_vector[i * 2];       // Άρτιο πίξελ
-        A_in_hw[i].f1 = A_flat_vector[i * 2 + 1];   // Περιττό πίξελ
+    // --- ΤΟ ΝΕΟ DATA PACKING ΣΤΟ TESTBENCH ---
+    printf("[TB] Packing 16384 floats into 1024 512-bit bursts...\n");
+    for (int i = 0; i < BURSTS_512BIT; i++) {
+        for (int j = 0; j < 16; j++) {
+            A_in_hw[i].data[j] = A_flat_vector[i * 16 + j];
+        }
     }
 
-    // Αρχικοποίηση της μνήμης εξόδου με μηδενικά για σιγουριά
-    for (int i = 0; i < KERNEL_ITERATIONS; i++) {
-        B_out_hw[i] = 0.0f;
+    for (int i = 0; i < KERNEL_ITERATIONS / 2; i++) {
+        B_out_hw[i].f0 = 0.0f; B_out_hw[i].f1 = 0.0f;
     }
 
     // 3. Εκτέλεση του Hardware
     printf("[TB] Running Hardware Top Level...\n");
     architecture_top_level(A_in_hw, B_out_hw);
 
-    // 4. Επαλήθευση (Verification)
+    // 4. Επαλήθευση (ΑΜΕΤΑΒΛΗΤΗ)
     printf("[TB] Verifying results...\n");
-    
     int errors = 0;
 
-    // Πρόσεξε πόσο απλή είναι η `for` τώρα! Μόνο 0 έως 14307.
     for (int i = 0; i < KERNEL_ITERATIONS; i++) {
-        data_t hls_result = B_out_hw[i]; 
+        data_t hls_result;
+        if (i % 2 == 0) {
+            hls_result = B_out_hw[i / 2].f0;
+        } else {
+            hls_result = B_out_hw[i / 2].f1;
+        }
+        
         data_t golden_result = B_golden_vector[i];
 
         if (std::abs(hls_result - golden_result) > 0.001f) {
             errors++;
             if (errors <= 5) {
-                // Υπολογισμός γραμμής/στήλης μόνο για το print (βοηθάει στο debugging)
                 int row = (i / KERNEL_COLS) + 1;
                 int col = (i % KERNEL_COLS) + 1;
                 printf("  [ERROR] Mismatch at index %d (Row: %d, Col: %d) -> HLS: %f, SW: %f\n",
@@ -115,11 +122,9 @@ int main() {
         }
     }
 
-    // Απελευθέρωση μνήμης
     delete[] A_in_hw;
     delete[] B_out_hw;
 
-    // 5. Αποτελέσματα
     if (errors == 0) {
         printf("\n=======================================\n");
         printf("  TEST PASSED! 0 errors detected.      \n");
