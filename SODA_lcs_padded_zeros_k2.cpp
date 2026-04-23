@@ -204,6 +204,12 @@ void soda_compute(hls::stream<data_t> &A_in_0, hls::stream<data_t> &A_in_1,
     #pragma HLS STREAM variable=c0_fw3_next depth=4
     #pragma HLS STREAM variable=c0_split depth=4
 
+    #pragma HLS STREAM variable=pe0_down depth=4
+    #pragma HLS STREAM variable=pe1_right depth=4
+    #pragma HLS STREAM variable=pe0_center depth=4
+    #pragma HLS STREAM variable=pe1_left depth=4
+    #pragma HLS STREAM variable=pe0_up depth=4
+
     // Reuse chain 1 streams
     hls::stream<data_t> c1_fw1_next("c1_fw1_next"), pe1_down("pe1_down");
     hls::stream<data_t> c1_fw2_next("c1_fw2_next"), c1_split("c1_split");
@@ -215,6 +221,12 @@ void soda_compute(hls::stream<data_t> &A_in_0, hls::stream<data_t> &A_in_1,
     #pragma HLS STREAM variable=c1_fw2_next depth=4
     #pragma HLS STREAM variable=c1_fw3_next depth=4
     #pragma HLS STREAM variable=c1_split depth=4
+
+    #pragma HLS STREAM variable=pe1_down depth=4
+    #pragma HLS STREAM variable=pe0_right depth=4
+    #pragma HLS STREAM variable=pe1_center depth=4
+    #pragma HLS STREAM variable=pe0_left depth=4
+    #pragma HLS STREAM variable=pe1_up depth=4
 
     // Reuse chain 0
     // Forwarding modules use PADDED_VEC_PER_ROW now
