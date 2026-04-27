@@ -30,6 +30,9 @@ const int SODA_DELAY = VECTORS_PER_ROW + 1;
 // extra 16 cycles to flush the last data, fow k =8 and 16 for example, because 1022 cant be divided by 8 and 16
 const int TOTAL_ITERATIONS = TOTAL_VECTORS + SODA_DELAY + 16;
 
+// Συνολικά πακέτα εξόδου (Valid + 16 Dummy Flush)
+const int TOTAL_PACKETS_OUT = (KERNEL_ITERATIONS / K) + 16;
+
 // Load, pretty much the same but parametric
 void load_input(float16* in_mem, hls::stream<data_t> out[K]) {
     float16 chunk; 
@@ -213,10 +216,7 @@ void soda_compute(hls::stream<data_t> A_in[K_FACTOR], hls::stream<data_t> B_out[
     }
 }
 
-// STORE MODULE
-void store_output(hls::stream<data_t> in[K], float_pack* out_mem) {
-    int write_idx = 0;
-
+void filter_and_pack(hls::stream<data_t> in[K], hls::stream<float_pack>& out_stream) {
     data_t buffer[K];
     #pragma HLS ARRAY_PARTITION variable=buffer complete
     for(int i = 0; i < K; i++) buffer[i] = 0.0f;
@@ -228,7 +228,6 @@ void store_output(hls::stream<data_t> in[K], float_pack* out_mem) {
     for (int i = 0; i < TOTAL_ITERATIONS; i++) {
         #pragma HLS PIPELINE II=1
 
-        // 1. Διάβασμα εισόδου με πλήρες Array Partitioning για αποφυγή Port Bottleneck
         data_t curr_val[K];
         #pragma HLS ARRAY_PARTITION variable=curr_val complete
         for (int k_idx = 0; k_idx < K; k_idx++) {
@@ -243,8 +242,6 @@ void store_output(hls::stream<data_t> in[K], float_pack* out_mem) {
             int col_cycle = true_cycle % VECTORS_PER_ROW;
 
             if (row >= 1 && row < ROWS - 1) {
-
-                // 2. Εξαγωγή valid pixels με ternary operators (πιο "ρηχό" logic από if-else)
                 int start_idx = (col_cycle == 0) ? 1 : 0;
                 int valid_count = (col_cycle == 0 || col_cycle == VECTORS_PER_ROW - 1) ? K - 1 : K;
 
@@ -255,30 +252,26 @@ void store_output(hls::stream<data_t> in[K], float_pack* out_mem) {
                     valid_pixels[j] = (j < valid_count) ? curr_val[start_idx + j] : 0.0f;
                 }
 
-                // 3. Merging: Γρήγορη ολίσθηση (Shifting) αντί για Nested Loops!
                 data_t merged[2 * K];
                 #pragma HLS ARRAY_PARTITION variable=merged complete
                 
-                // α) Αντιγραφή του παλιού buffer στην αρχή του πάγκου
                 for (int j = 0; j < K; j++) {
                     #pragma HLS UNROLL
                     merged[j] = buffer[j];
                     merged[K + j] = 0.0f; 
                 }
-                
-                // β) Απευθείας τοποθέτηση των νέων pixels με offset το buf_count
                 for (int j = 0; j < K; j++) {
                     #pragma HLS UNROLL
                     merged[buf_count + j] = valid_pixels[j];
                 }
 
-                // 4. Πακετάρισμα και ενημέρωση buffer
                 int new_total = buf_count + valid_count;
 
                 if (new_total >= K) {
                     float_pack pack;
                     for (int j = 0; j < K; j++) pack.data[j] = merged[j];
-                    out_mem[write_idx++] = pack;
+                    
+                    out_stream.write(pack);
 
                     buf_count = new_total - K;
                     for (int j = 0; j < K; j++) buffer[j] = merged[K + j];
@@ -287,27 +280,37 @@ void store_output(hls::stream<data_t> in[K], float_pack* out_mem) {
                     for (int j = 0; j < K; j++) buffer[j] = merged[j];
                 }
 
-                // Σηκώνουμε σημαία στο τελευταίο valid vector
                 if (row == ROWS - 2 && col_cycle == VECTORS_PER_ROW - 1) done = true;
             }
         }
         else {
-            // 5. Το καθαρό 16-cycle Dummy Flush που ενσωματώνει και το leftover
             if (done && dummy_count < 16) {
                 float_pack dummy_pack;
 
                 for (int j = 0; j < K; j++) {
                     #pragma HLS UNROLL
-                    // Στον 1ο dummy κύκλο βάζουμε ό,τι έμεινε, αλλιώς μηδέν
                     dummy_pack.data[j] = (dummy_count == 0 && j < buf_count) ? buffer[j] : 0.0f;
                 }
 
-                if (dummy_count == 0) buf_count = 0; // Αδειάσαμε με επιτυχία!
+                if (dummy_count == 0) buf_count = 0; 
 
-                out_mem[write_idx++] = dummy_pack;
+                out_stream.write(dummy_pack);
                 dummy_count++;
             }
         }
+    }
+}
+
+
+void store_output(hls::stream<float_pack>& in_stream, float_pack* out_mem) {
+    for (int i = 0; i < TOTAL_PACKETS_OUT; i++) {
+        #pragma HLS PIPELINE II=1
+        #pragma HLS LATENCY min=2
+        
+        float_pack temp;
+        in_stream.read(temp);
+        
+        out_mem[i] = temp;  
     }
 }
 
@@ -323,11 +326,17 @@ void architecture_top_level(float16* A_in_mem, float_pack* B_out_mem) {
 
     hls::stream<data_t> in_streams[K];
     hls::stream<data_t> out_streams[K];
+    hls::stream<float_pack> pack_stream;
     
     #pragma HLS STREAM variable=in_streams depth=8 
-    #pragma HLS STREAM variable=out_streams depth=8 
+    #pragma HLS STREAM variable=out_streams depth=8
+    #pragma HLS STREAM variable=pack_stream depth=16 
     
     load_input(A_in_mem, in_streams);
     soda_compute<K, TOTAL_ITERATIONS>(in_streams, out_streams);
-    store_output(out_streams, B_out_mem);
+
+    filter_and_pack(out_streams, pack_stream);
+
+
+    store_output(pack_stream, B_out_mem);
 }
