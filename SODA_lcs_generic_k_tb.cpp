@@ -2,21 +2,22 @@
 #include <iostream>
 #include <vector>
 #include <cmath>
+#include "ap_int.h"    
+#include "ap_fixed.h" 
+#include "hls_stream.h"
+#include "hls_math.h"
+#include "hls_burst_maxi.h"  
+#include "hls_vector.h"
 
 // === ΠΡΕΠΕΙ ΝΑ ΕΙΝΑΙ ΙΔΙΟ ΜΕ ΤΟ K ΤΟΥ HARDWARE ===
 const int K = 8; 
 
 typedef float data_t;
 
-// Το πακέτο εισόδου από τη μνήμη (AXI Burst Gearbox)
-struct float16 {
-    data_t data[16];
-};
+using float16 = hls::vector<data_t, 16>;
 
-// Το Generic πακέτο εξόδου
-struct float_pack {
-    data_t data[K];
-};
+//Output pack
+using float_pack = hls::vector<data_t, K>;
 
 const int ROWS = 16;
 const int COLUMNS = 1024;
@@ -30,7 +31,7 @@ const int KERNEL_COLS = COLUMNS - 2;
 const int KERNEL_ITERATIONS = KERNEL_ROWS * KERNEL_COLS; // 14308
 
 // Δήλωση του Top Level Hardware
-void architecture_top_level(float16* A_in_mem, float_pack* B_out_mem);
+void architecture_top_level(hls::burst_maxi<float16> A_in_mem, hls::burst_maxi<float_pack> B_out_mem);
 
 // ==========================================
 // GOLDEN MODEL (C++ Software Reference)
@@ -63,7 +64,7 @@ void compute_golden(std::vector<data_t>& A_vec, std::vector<data_t>& B_golden_ve
 
 // ==========================================
 // MAIN TESTBENCH
-// ==========================================
+// ==========================================   
 int main() {
     
     printf("[TB] Starting Generic SODA Testbench (K=%d)...\n", K);
@@ -84,27 +85,30 @@ int main() {
     // Υπολογισμός των απαιτούμενων πακέτων εξόδου
     // Χρησιμοποιούμε Ceil Division (στρογγυλοποίηση προς τα πάνω) για ασφάλεια
     // Προσθέτουμε +16 θέσεις ασφαλείας για τα dummy AXI bursts
-    int out_packs = (KERNEL_ITERATIONS + K - 1) / K + 16;
+    int out_packs = (KERNEL_ITERATIONS / K) + 16;
     float_pack* B_out_hw = new float_pack[out_packs];
 
     // --- GENERIC PACKING ΕΙΣΟΔΟΥ ---
     printf("[TB] Packing 16384 floats into 1024 512-bit bursts...\n");
     for (int i = 0; i < BURSTS_512BIT; i++) {
         for (int j = 0; j < 16; j++) {
-            A_in_hw[i].data[j] = A_flat_vector[i * 16 + j];
+            A_in_hw[i][j] = A_flat_vector[i * 16 + j];
         }
     }
 
     // Καθαρισμός εξόδου
     for (int i = 0; i < out_packs; i++) {
         for(int j = 0; j < K; j++) {
-            B_out_hw[i].data[j] = 0.0f;
+            B_out_hw[i][j] = 0.0f;
         }
     }
 
+    hls::burst_maxi<float16> A_in_maxi(A_in_hw); 
+    hls::burst_maxi<float_pack> B_out_maxi(B_out_hw);
+
     // 3. Εκτέλεση του Hardware
     printf("[TB] Running Hardware Top Level...\n");
-    architecture_top_level(A_in_hw, B_out_hw);
+    architecture_top_level(A_in_maxi, B_out_maxi);
 
     // 4. Επαλήθευση (Generic Unpacking)
     printf("[TB] Verifying results...\n");
@@ -115,7 +119,7 @@ int main() {
         int pack_idx = i / K;
         int elem_idx = i % K;
         
-        data_t hls_result = B_out_hw[pack_idx].data[elem_idx];
+        data_t hls_result = B_out_hw[pack_idx][elem_idx];
         data_t golden_result = B_golden_vector[i];
 
         if (std::abs(hls_result - golden_result) > 0.001f) {

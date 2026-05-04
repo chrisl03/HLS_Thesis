@@ -1,20 +1,19 @@
 #include "ap_int.h"    
 #include "ap_fixed.h" 
 #include "hls_stream.h"
-#include "hls_math.h"  
+#include "hls_math.h"
+#include "hls_burst_maxi.h" 
+#include "hls_vector.h" 
 
-const int K = 8; // Το κεντρικό μας parameter
+const int K = 8; // SODA Paramter
 typedef float data_t;
 
 // needed for axi to read/write in bursts
-struct float16 {
-    data_t data[16];
-};
+typedef hls::vector<data_t, 16> float16;
 
 //Output pack
-struct float_pack {
-    data_t data[K];
-};
+typedef hls::vector<data_t, K>  float_pack;
+
 
 const int ROWS = 16;
 const int COLUMNS = 1024;
@@ -30,31 +29,40 @@ const int SODA_DELAY = VECTORS_PER_ROW + 1;
 // extra 16 cycles to flush the last data, fow k =8 and 16 for example, because 1022 cant be divided by 8 and 16
 const int TOTAL_ITERATIONS = TOTAL_VECTORS + SODA_DELAY + 16;
 
-// Συνολικά πακέτα εξόδου (Valid + 16 Dummy Flush)
+// Total packets out and in
 const int TOTAL_PACKETS_OUT = (KERNEL_ITERATIONS / K) + 16;
+const int BURSTS_IN = (ROWS * COLUMNS) / 16;
 
-// Load, pretty much the same but parametric
-void load_input(float16* in_mem, hls::stream<data_t> out[K]) {
-    float16 chunk; 
+void load_input(hls::burst_maxi<float16> in_mem, hls::stream<float16>& out_stream) {
+    #pragma HLS INLINE off
+    in_mem.read_request(0, BURSTS_IN);
     
+    for (int i = 0; i < BURSTS_IN; i++) {
+        #pragma HLS PIPELINE II=1
+        out_stream.write(in_mem.read());
+    }
+}
+
+void unpack_and_feed(hls::stream<float16>& in_stream, hls::stream<data_t> out[K]) {
+    float16 chunk; 
+    #pragma HLS ARRAY_PARTITION variable=chunk complete
+
     for (int i = 0; i < TOTAL_ITERATIONS; i++) {
         #pragma HLS PIPELINE II=1
         
         if (i < TOTAL_VECTORS) {
-            int burst_index = i / (16 / K); 
-            int word_index  = i % (16 / K);  
-            
+            int word_index = i % (16 / K);  
             if (word_index == 0) {
-                chunk = in_mem[burst_index]; 
+                chunk = in_stream.read(); 
             }
             
             // unroll the loop and write simultaneously to all cables
             for (int k_idx = 0; k_idx < K; k_idx++) {
                 #pragma HLS UNROLL
-                out[k_idx].write(chunk.data[word_index * K + k_idx]);
+                out[k_idx].write(chunk[word_index * K + k_idx]);
             }
         } else {
-            // Pipeline Flushing
+            // Pipeline Flushing (Στέλνουμε μηδενικά για να αδειάσουν τα PEs)
             for (int k_idx = 0; k_idx < K; k_idx++) {
                 #pragma HLS UNROLL
                 out[k_idx].write(0.0f);
@@ -269,7 +277,7 @@ void filter_and_pack(hls::stream<data_t> in[K], hls::stream<float_pack>& out_str
 
                 if (new_total >= K) {
                     float_pack pack;
-                    for (int j = 0; j < K; j++) pack.data[j] = merged[j];
+                    for (int j = 0; j < K; j++) pack[j] = merged[j];
                     
                     out_stream.write(pack);
 
@@ -289,7 +297,7 @@ void filter_and_pack(hls::stream<data_t> in[K], hls::stream<float_pack>& out_str
 
                 for (int j = 0; j < K; j++) {
                     #pragma HLS UNROLL
-                    dummy_pack.data[j] = (dummy_count == 0 && j < buf_count) ? buffer[j] : 0.0f;
+                    dummy_pack[j] = (dummy_count == 0 && j < buf_count) ? buffer[j] : 0.0f;
                 }
 
                 if (dummy_count == 0) buf_count = 0; 
@@ -302,41 +310,43 @@ void filter_and_pack(hls::stream<data_t> in[K], hls::stream<float_pack>& out_str
 }
 
 
-void store_output(hls::stream<float_pack>& in_stream, float_pack* out_mem) {
+void store_output(hls::stream<float_pack>& in_stream, hls::burst_maxi<float_pack> out_mem) {
+    #pragma HLS INLINE off
+    out_mem.write_request(0, TOTAL_PACKETS_OUT);
+    
     for (int i = 0; i < TOTAL_PACKETS_OUT; i++) {
         #pragma HLS PIPELINE II=1
-        #pragma HLS LATENCY min=2
-        
-        float_pack temp;
-        in_stream.read(temp);
-        
-        out_mem[i] = temp;  
+        out_mem.write(in_stream.read());
     }
+
+    out_mem.write_response();
 }
 
 // TOP LEVEL
-void architecture_top_level(float16* A_in_mem, float_pack* B_out_mem) {
-    #pragma HLS INTERFACE m_axi port=A_in_mem bundle=gmem0 depth=(TOTAL_VECTORS/(16/K))
-    #pragma HLS INTERFACE m_axi port=B_out_mem bundle=gmem1 depth=(KERNEL_ITERATIONS/K + 16)
+void architecture_top_level(hls::burst_maxi<float16> A_in_mem, hls::burst_maxi<float_pack> B_out_mem) {
+    #pragma HLS INTERFACE m_axi port=A_in_mem bundle=gmem0 depth=BURSTS_IN
+    #pragma HLS INTERFACE m_axi port=B_out_mem bundle=gmem1 depth=TOTAL_PACKETS_OUT
     #pragma HLS INTERFACE s_axilite port=return
-    #pragma HLS AGGREGATE variable=A_in_mem compact=auto
-    #pragma HLS AGGREGATE variable=B_out_mem compact=auto
 
     #pragma HLS DATAFLOW
 
     hls::stream<data_t> in_streams[K];
     hls::stream<data_t> out_streams[K];
+    hls::stream<float16>   pack_in_stream;
     hls::stream<float_pack> pack_stream;
     
     #pragma HLS STREAM variable=in_streams depth=8 
     #pragma HLS STREAM variable=out_streams depth=8
-    #pragma HLS STREAM variable=pack_stream depth=16 
+    #pragma HLS STREAM variable=pack_in_stream depth=16  // Buffer out
+    #pragma HLS STREAM variable=pack_stream depth=16 // Buffer in
     
-    load_input(A_in_mem, in_streams);
+    load_input(A_in_mem, pack_in_stream);
+
+    unpack_and_feed(pack_in_stream, in_streams);
+
     soda_compute<K, TOTAL_ITERATIONS>(in_streams, out_streams);
 
     filter_and_pack(out_streams, pack_stream);
-
 
     store_output(pack_stream, B_out_mem);
 }
