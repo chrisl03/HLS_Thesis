@@ -5,60 +5,141 @@
 SHELL := /bin/bash
 
 ############################## Help Section ##############################
-.PHONY: help all_full clean cleanall test run build host xclbin emconfig hls all
+.PHONY: help all_full clean cleanall test run build host xclbin emconfig hls all all_no_hls report sd_card
 
 help::
 	@echo "Makefile Usage:"
-	@echo "  make all TARGET=<sw_emu/hw_emu/hw> HOST_ARCH=<aarch64/x86> [DEVICE=<platform.xpfm>] [EDGE_COMMON_SW=<versal common image path>]"
 	@echo ""
-	@echo "  make hls TARGET=<sw_emu/hw_emu/hw> [DEVICE=<platform.xpfm>]"
-	@echo "      Run HLS (compile only) and produce kernel .xo(s) only."
+	@echo "  Default configuration:"
+	@echo "    TARGET     = $(TARGET)"
+	@echo "    HOST_ARCH  = $(HOST_ARCH)"
+	@echo "    DEVICE     = $(DEVICE)"
+	@echo "    KERNEL     = $(KERNEL_NAME)"
 	@echo ""
-	@echo "  make build TARGET=<sw_emu/hw_emu/hw> HOST_ARCH=<aarch64/x86> [DEVICE=<platform.xpfm>]"
-	@echo "      Build kernel xclbin."
+	@echo "  This project targets the Alveo U55C platform by default:"
+	@echo "    xilinx_u55c_gen3x16_xdma_3_202210_1"
 	@echo ""
-	@echo "  make host HOST_ARCH=<aarch64/x86> [EDGE_COMMON_SW=<versal common image path>]"
-	@echo "      Build host executable."
+	@echo "  Typical U55C commands:"
 	@echo ""
-	@echo "  make run TARGET=<sw_emu/hw_emu/hw> HOST_ARCH=<aarch64/x86>"
-	@echo "      Run emulation (x86) or launch emulator (aarch64) depending on TARGET."
+	@echo "    make all_full"
+	@echo "        Build host executable, compile/link/package the xclbin, and generate emconfig.json."
 	@echo ""
-	@echo "  make sd_card TARGET=<sw_emu/hw_emu/hw> HOST_ARCH=<aarch64/x86> [EDGE_COMMON_SW=<versal common image path>]"
-	@echo "      Create package (for aarch64) including rootfs/Image, host exe, run_app.sh, and data folders."
+	@echo "    make all"
+	@echo "        Same as all_full, then run the report target to preserve selected reports/outputs"
+	@echo "        and clean the remaining generated files."
 	@echo ""
-	@echo "  make clean / make cleanall"
+	@echo "    make hls"
+	@echo "        Compile the HLS kernel only and generate the .xo file."
+	@echo "        Does not link the xclbin and does not build the host."
+	@echo ""
+	@echo "    make build"
+	@echo "        Build the FPGA binary container:"
+	@echo "          .xo -> linked xclbin -> packaged xclbin"
+	@echo ""
+	@echo "    make host"
+	@echo "        Build only the x86 XRT host executable."
+	@echo ""
+	@echo "    make run"
+	@echo "        Build everything and run the host application."
+	@echo "        For sw_emu/hw_emu, XCL_EMULATION_MODE is set automatically."
+	@echo "        For TARGET=hw and HOST_ARCH=x86, runs directly on the installed Alveo card."
+	@echo ""
+	@echo "    make test"
+	@echo "        Run the already-built host application."
+	@echo "        Unlike run, this does not rebuild the xclbin."
+	@echo ""
+	@echo "    make emconfig"
+	@echo "        Generate emconfig.json for the selected DEVICE."
+	@echo ""
+	@echo "    make clean"
+	@echo "        Remove temporary build files, logs, emulation files, and generated objects."
+	@echo ""
+	@echo "    make cleanall"
+	@echo "        Remove all generated build directories and packaged outputs."
+	@echo ""
+	@echo "  Common examples:"
+	@echo ""
+	@echo "    make all_full"
+	@echo "    make all_full TARGET=hw HOST_ARCH=x86"
+	@echo "    make run TARGET=sw_emu HOST_ARCH=x86"
+	@echo "    make build TARGET=hw HOST_ARCH=x86"
+	@echo "    make host HOST_ARCH=x86"
+	@echo ""
+	@echo "  Override the platform manually:"
+	@echo ""
+	@echo "    make all_full DEVICE=/opt/xilinx/platforms/xilinx_u55c_gen3x16_xdma_3_202210_1/xilinx_u55c_gen3x16_xdma_3_202210_1.xpfm"
+	@echo ""
+	@echo "  Advanced / optional targets:"
+	@echo ""
+	@echo "    make all_no_hls"
+	@echo "        Reuse an existing .xo file and continue with host/xclbin packaging."
+	@echo "        Fails if the expected .xo does not already exist."
+	@echo ""
+	@echo "    make xclbin"
+	@echo "        Alias for make build."
+	@echo ""
+	@echo "    make report"
+	@echo "        Preserve selected xclbin, host executable, logs, and synthesis/link reports,"
+	@echo "        then clean the rest of the generated files."
+	@echo ""
+	@echo "    make sd_card HOST_ARCH=aarch64"
+	@echo "        Embedded/SoC packaging flow only."
+	@echo "        Not needed for the default U55C x86 PCIe datacenter-card flow."
+	@echo ""
+	@echo "  Useful variables:"
+	@echo ""
+	@echo "    TARGET=<sw_emu|hw_emu|hw>"
+	@echo "    HOST_ARCH=<x86|aarch64>"
+	@echo "    DEVICE=<path/to/platform.xpfm>"
+	@echo "    KERNEL_NAME=<top_function_name>"
+	@echo "    KERNEL_DIR=<kernel_source_directory>"
+	@echo "    HOST_DIR=<host_source_directory>"
+	@echo "    CMD_ARGS=<arguments passed to host executable>"
+	@echo ""
 
 ############################## Project Variables ##############################
 TARGET     ?= hw
-HOST_ARCH  ?= aarch64
 
-# Default platform (as requested)
-PLATFORM_REPO_PATHS ?= /opt/Xilinx/Vitis/2023.2/base_platforms
-DEVICE ?= $(PLATFORM_REPO_PATHS)/xilinx_vck190_base_dfx_202320_1/xilinx_vck190_base_dfx_202320_1.xpfm
+# U55C is an Alveo PCIe datacenter card, so default host build is x86.
+# The aarch64 branch is kept for compatibility with embedded/SoC platforms
+# when explicitly requested.
+HOST_ARCH  ?= x86
 
+# Default platform: Alveo U55C on your current server
+PLATFORM_REPO_PATHS ?= /opt/xilinx/platforms
+DEVICE_NAME ?= xilinx_u55c_gen3x16_xdma_3_202210_1
+DEVICE ?= $(PLATFORM_REPO_PATHS)/$(DEVICE_NAME)/$(DEVICE_NAME).xpfm
+
+# These are only needed when HOST_ARCH is not x86.
+# For U55C/x86 they are ignored.
 EDGE_COMMON_SW_PATH ?= /opt/petalinux_files
 EDGE_COMMON_SW ?= ${EDGE_COMMON_SW_PATH}/xilinx-versal-common-v2023.2
 
-# PetaLinux SDK sysroot used for cross-compiling the host (has XRT headers)
+# PetaLinux SDK sysroot used only for aarch64 cross-compilation
 SYSROOT_PATH ?= /opt/petalinux/2023.2
 SYSROOT      ?= $(SYSROOT_PATH)/sysroots/cortexa72-cortexa53-xilinx-linux
 
-
 # Kernel / Host naming
-KERNEL_NAME ?= gemm
+# IMPORTANT: this must match your unchanged SODA top function name.
+KERNEL_NAME ?= architecture_top_level
 
 KERNEL_DIR  ?= src
-HOST_DIR    ?= benchmark_host
+HOST_DIR    ?= host
 
 KERNEL_CFG  ?= hls.cfg
 LINK_CFG    ?= system.cfg
 
 # Sources
-KERNEL_SRCS ?= $(KERNEL_DIR)/$(KERNEL_NAME).cpp
-HOST_SRCS   ?= $(HOST_DIR)/tb_gemm.cpp $(HOST_DIR)/host_gemm_fpga.cpp
+# Keep your SODA source code unchanged.
+KERNEL_SRCS ?= $(KERNEL_DIR)/SODA_lcs_generic_k.cpp
+HOST_SRCS   ?= $(HOST_DIR)/tb_soda_lcs.cpp
 
 # Output names
-EXECUTABLE  ?= ./$(KERNEL_NAME)_host.exe
+EXECUTABLE  ?= ./soda_lcs_host.exe
+
+ifneq ($(HOST_ARCH),$(filter $(HOST_ARCH),x86 aarch64))
+$(error HOST_ARCH must be either x86 or aarch64)
+endif
 
 # Friendly name from device for folder names
 device2xsa = $(strip $(patsubst %.xpfm,%,$(shell basename $(DEVICE))))
