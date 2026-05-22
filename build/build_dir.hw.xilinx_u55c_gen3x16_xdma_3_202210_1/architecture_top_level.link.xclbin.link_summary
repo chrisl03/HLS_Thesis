@@ -1,0 +1,488 @@
+<ENTRY>
+{
+ "thisFile": "/home/aimilefth/cliouskos/HLS_Thesis/build/build_dir.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/architecture_top_level.link.xclbin.link_summary",
+ "connectId": "",
+ "serverToken": "",
+ "timestamp": "0"
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_CmdStep",
+ "dateTimestamp": "Thu May 21 20:10:24 2026",
+ "timestampMillis": "1779383424280",
+ "buildStep": {
+  "cmdId": "69d28260-244b-4884-a566-a56b07b8aec0",
+  "name": "v++",
+  "logFile": "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/link.steps.log",
+  "commandLine": "/home/Xilinx/Vitis/2023.2/bin/unwrapped/lnx64.o/v++  --vivado.prop \"run.__KERNEL__.{STEPS.SYNTH_DESIGN.ARGS.MORE OPTIONS}={-directive sdx_optimization_effort_high}\" --vivado.prop run.impl_1.STEPS.PHYS_OPT_DESIGN.IS_ENABLED=true --advanced.param compiler.forceHlsDesignXmlGeneration=1 -t hw --platform /opt/xilinx/platforms/xilinx_u55c_gen3x16_xdma_3_202210_1/xilinx_u55c_gen3x16_xdma_3_202210_1.xpfm --save-temps --optimize 2 --report_level estimate -l --config system.cfg --temp_dir ./_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1 -o build_dir.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/architecture_top_level.link.xclbin _x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/architecture_top_level.xo ",
+  "args": [
+   "-t",
+   "hw",
+   "--platform",
+   "/opt/xilinx/platforms/xilinx_u55c_gen3x16_xdma_3_202210_1/xilinx_u55c_gen3x16_xdma_3_202210_1.xpfm",
+   "--save-temps",
+   "--optimize",
+   "2",
+   "--report_level",
+   "estimate",
+   "-l",
+   "--config",
+   "system.cfg",
+   "--temp_dir",
+   "./_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1",
+   "-o",
+   "build_dir.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/architecture_top_level.link.xclbin",
+   "_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/architecture_top_level.xo"
+  ],
+  "iniFiles": [
+   {
+    "path": "/home/aimilefth/cliouskos/HLS_Thesis/build/system.cfg",
+    "content": "[connectivity]\nnk=architecture_top_level:1:architecture_top_level\n# Map to SLR\nslr=architecture_top_level:SLR0\nsp=architecture_top_level.A_in_mem:HBM[0]\nsp=architecture_top_level.B_out_mem:HBM[1]\n\n[clock]\nfreqHz=250000000:architecture_top_level.ap_clk\n\n[vivado]\nimpl.jobs=16\nsynth.jobs=16\nprop=run.impl_1.STEPS.OPT_DESIGN.IS_ENABLED=true\nprop=run.impl_1.STEPS.OPT_DESIGN.ARGS.DIRECTIVE=Explore\nprop=run.impl_1.STEPS.PLACE_DESIGN.ARGS.DIRECTIVE=EarlyBlockPlacement\nprop=run.impl_1.STEPS.PHYS_OPT_DESIGN.IS_ENABLED=true\nprop=run.impl_1.STEPS.PHYS_OPT_DESIGN.ARGS.DIRECTIVE=AggressiveExplore\nprop=run.impl_1.STEPS.ROUTE_DESIGN.ARGS.DIRECTIVE=Explore\nprop=run.impl_1.STEPS.POST_ROUTE_PHYS_OPT_DESIGN.IS_ENABLED=true\nprop=run.impl_1.STEPS.POST_ROUTE_PHYS_OPT_DESIGN.ARGS.DIRECTIVE=AggressiveExplore\n[profile]\n# memory=All\ndata=architecture_top_level:all:all\n"
+   }
+  ],
+  "cwd": "/home/aimilefth/cliouskos/HLS_Thesis/build"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_Status",
+ "dateTimestamp": "Thu May 21 20:10:24 2026",
+ "timestampMillis": "1779383424281",
+ "status": {
+  "cmdId": "69d28260-244b-4884-a566-a56b07b8aec0",
+  "state": "CS_RUNNING"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_FlowMetaData",
+ "dateTimestamp": "Thu May 21 20:10:29 2026",
+ "timestampMillis": "1779383429214",
+ "buildSummary": {
+  "hardwarePlatform": "xilinx_u55c_gen3x16_xdma_3_202210_1.xpfm",
+  "hardwareDsa": "",
+  "platformDirectory": "/opt/xilinx/platforms/xilinx_u55c_gen3x16_xdma_3_202210_1",
+  "runtime": "OpenCL",
+  "systemConfig": "Linux",
+  "flow": "BF_LINK",
+  "target": "TT_HW",
+  "binaryContainer": {
+   "base": {
+    "type": "BT_UKNOWN",
+    "name": "architecture_top_level.link",
+    "file": "/home/aimilefth/cliouskos/HLS_Thesis/build/build_dir.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/architecture_top_level.link.xclbin",
+    "reports": [],
+    "uuid": ""
+   },
+   "kernels": []
+  },
+  "kernels": [
+   {
+    "base": {
+     "type": "KERNEL",
+     "name": "architecture_top_level",
+     "file": "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/architecture_top_level.xo",
+     "reports": [],
+     "uuid": ""
+    },
+    "sources": [
+     "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/xo/architecture_top_level/architecture_top_level/cpu_sources/SODA_lcs_generic_k.cpp"
+    ],
+    "psSources": [],
+    "cuNames": [
+     "architecture_top_level"
+    ],
+    "type": "HLS",
+    "frequency": 0,
+    "freqUnits": ""
+   }
+  ],
+  "toolVersion": "Vitis V++ Compiler Release 2023.2.2. SW Build 4101106 on 2024-02-09-00:45:52"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_SubCmdStep",
+ "dateTimestamp": "Thu May 21 20:10:29 2026",
+ "timestampMillis": "1779383429406",
+ "buildStep": {
+  "cmdId": "ead7a34e-157b-400d-89b8-8f93e4bb91ac",
+  "name": "system_link",
+  "logFile": "",
+  "commandLine": "system_link --xo /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/architecture_top_level.xo -keep -memory-for-trace HBM[0] --config /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/syslinkConfig.ini --xpfm /opt/xilinx/platforms/xilinx_u55c_gen3x16_xdma_3_202210_1/xilinx_u55c_gen3x16_xdma_3_202210_1.xpfm --target hw --output_dir /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int --temp_dir /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/sys_link",
+  "args": [
+   "--xo",
+   "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/architecture_top_level.xo",
+   "-keep",
+   "-memory-for-trace",
+   "HBM[0]",
+   "--config",
+   "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/syslinkConfig.ini",
+   "--xpfm",
+   "/opt/xilinx/platforms/xilinx_u55c_gen3x16_xdma_3_202210_1/xilinx_u55c_gen3x16_xdma_3_202210_1.xpfm",
+   "--target",
+   "hw",
+   "--output_dir",
+   "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int",
+   "--temp_dir",
+   "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/sys_link"
+  ],
+  "iniFiles": [
+   {
+    "path": "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/syslinkConfig.ini",
+    "content": "nk=architecture_top_level:1:architecture_top_level\nsp=architecture_top_level.A_in_mem:HBM[0]\nsp=architecture_top_level.B_out_mem:HBM[1]\nslr=architecture_top_level:SLR0\n\nclock.freqHz=250000000:architecture_top_level.ap_clk\n\n"
+   }
+  ],
+  "cwd": "/home/aimilefth/cliouskos/HLS_Thesis/build"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_Status",
+ "dateTimestamp": "Thu May 21 20:10:29 2026",
+ "timestampMillis": "1779383429406",
+ "status": {
+  "cmdId": "ead7a34e-157b-400d-89b8-8f93e4bb91ac",
+  "state": "CS_RUNNING"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_Status",
+ "dateTimestamp": "Thu May 21 20:10:54 2026",
+ "timestampMillis": "1779383454644",
+ "status": {
+  "cmdId": "ead7a34e-157b-400d-89b8-8f93e4bb91ac",
+  "state": "CS_PASSED"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_SubCmdStep",
+ "dateTimestamp": "Thu May 21 20:10:54 2026",
+ "timestampMillis": "1779383454648",
+ "buildStep": {
+  "cmdId": "f57e0233-4d3d-4918-98f5-b843590874fa",
+  "name": "cf2sw",
+  "logFile": "",
+  "commandLine": "cf2sw -sdsl /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/sdsl.dat -rtd /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/cf2sw.rtd -nofilter /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/cf2sw_full.rtd -xclbin /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/xclbin_orig.xml -o /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/xclbin_orig.1.xml",
+  "args": [
+   "-sdsl",
+   "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/sdsl.dat",
+   "-rtd",
+   "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/cf2sw.rtd",
+   "-nofilter",
+   "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/cf2sw_full.rtd",
+   "-xclbin",
+   "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/xclbin_orig.xml",
+   "-o",
+   "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/xclbin_orig.1.xml"
+  ],
+  "iniFiles": [],
+  "cwd": "/home/aimilefth/cliouskos/HLS_Thesis/build"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_Status",
+ "dateTimestamp": "Thu May 21 20:10:54 2026",
+ "timestampMillis": "1779383454649",
+ "status": {
+  "cmdId": "f57e0233-4d3d-4918-98f5-b843590874fa",
+  "state": "CS_RUNNING"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_Status",
+ "dateTimestamp": "Thu May 21 20:11:00 2026",
+ "timestampMillis": "1779383460628",
+ "status": {
+  "cmdId": "f57e0233-4d3d-4918-98f5-b843590874fa",
+  "state": "CS_PASSED"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_SubCmdStep",
+ "dateTimestamp": "Thu May 21 20:11:00 2026",
+ "timestampMillis": "1779383460631",
+ "buildStep": {
+  "cmdId": "4143022e-d199-44cb-985d-4b57b0879286",
+  "name": "rtd2_system_diagram",
+  "logFile": "",
+  "commandLine": "rtd2SystemDiagram",
+  "args": [],
+  "iniFiles": [],
+  "cwd": "/home/aimilefth/cliouskos/HLS_Thesis/build"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_Status",
+ "dateTimestamp": "Thu May 21 20:11:00 2026",
+ "timestampMillis": "1779383460631",
+ "status": {
+  "cmdId": "4143022e-d199-44cb-985d-4b57b0879286",
+  "state": "CS_RUNNING"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_Report",
+ "dateTimestamp": "Thu May 21 20:11:00 2026",
+ "timestampMillis": "1779383460968",
+ "report": {
+  "path": "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/systemDiagramModel.json",
+  "name": "",
+  "fileType": "JSON",
+  "reportType": "SYSTEM_DIAGRAM",
+  "cmdId": ""
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_Status",
+ "dateTimestamp": "Thu May 21 20:11:00 2026",
+ "timestampMillis": "1779383460969",
+ "status": {
+  "cmdId": "4143022e-d199-44cb-985d-4b57b0879286",
+  "state": "CS_PASSED"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_SubCmdStep",
+ "dateTimestamp": "Thu May 21 20:11:00 2026",
+ "timestampMillis": "1779383460972",
+ "buildStep": {
+  "cmdId": "76eb67cc-9ba7-412d-9306-314b6e7635b1",
+  "name": "vpl",
+  "logFile": "",
+  "commandLine": "vpl -t hw -f /opt/xilinx/platforms/xilinx_u55c_gen3x16_xdma_3_202210_1/xilinx_u55c_gen3x16_xdma_3_202210_1.xpfm -s --remote_ip_cache /home/aimilefth/cliouskos/HLS_Thesis/build/.ipcache --trace_memory HBM[0] --output_dir /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int --log_dir /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/logs/link --report_dir /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/reports/link --config /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/vplConfig.ini -k /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/kernel_info.dat --webtalk_flag Vitis --temp_dir /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link --no-info --iprepo /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/xo/ip_repo/xilinx_com_hls_architecture_top_level_1_0 --messageDb /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/run_link/vpl.pb /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/dr.bd.tcl",
+  "args": [
+   "-t",
+   "hw",
+   "-f",
+   "/opt/xilinx/platforms/xilinx_u55c_gen3x16_xdma_3_202210_1/xilinx_u55c_gen3x16_xdma_3_202210_1.xpfm",
+   "-s",
+   "--remote_ip_cache",
+   "/home/aimilefth/cliouskos/HLS_Thesis/build/.ipcache",
+   "--trace_memory",
+   "HBM[0]",
+   "--output_dir",
+   "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int",
+   "--log_dir",
+   "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/logs/link",
+   "--report_dir",
+   "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/reports/link",
+   "--config",
+   "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/vplConfig.ini",
+   "-k",
+   "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/kernel_info.dat",
+   "--webtalk_flag",
+   "Vitis",
+   "--temp_dir",
+   "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link",
+   "--no-info",
+   "--iprepo",
+   "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/xo/ip_repo/xilinx_com_hls_architecture_top_level_1_0",
+   "--messageDb",
+   "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/run_link/vpl.pb",
+   "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/dr.bd.tcl"
+  ],
+  "iniFiles": [
+   {
+    "path": "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/vplConfig.ini",
+    "content": "[advanced]\nparam=compiler.forceHlsDesignXmlGeneration=1\nparam=compiler.enablePerformanceTrace=1\nparam=compiler.vppCurrentWorkingDir=/home/aimilefth/cliouskos/HLS_Thesis/build\nmisc=BinaryName=architecture_top_level.link\n\n[connectivity]\nnk=architecture_top_level:1:architecture_top_level\n\n[vivado]\nprop=run.__KERNEL__.{STEPS.SYNTH_DESIGN.ARGS.MORE OPTIONS}={-directive sdx_optimization_effort_high}\nprop=run.impl_1.STEPS.PHYS_OPT_DESIGN.IS_ENABLED=true\nsynth.jobs=16\nimpl.jobs=16\nprop=run.impl_1.STEPS.OPT_DESIGN.IS_ENABLED=true\nprop=run.impl_1.STEPS.OPT_DESIGN.ARGS.DIRECTIVE=Explore\nprop=run.impl_1.STEPS.PLACE_DESIGN.ARGS.DIRECTIVE=EarlyBlockPlacement\nprop=run.impl_1.STEPS.PHYS_OPT_DESIGN.IS_ENABLED=true\nprop=run.impl_1.STEPS.PHYS_OPT_DESIGN.ARGS.DIRECTIVE=AggressiveExplore\nprop=run.impl_1.STEPS.ROUTE_DESIGN.ARGS.DIRECTIVE=Explore\nprop=run.impl_1.STEPS.POST_ROUTE_PHYS_OPT_DESIGN.IS_ENABLED=true\nprop=run.impl_1.STEPS.POST_ROUTE_PHYS_OPT_DESIGN.ARGS.DIRECTIVE=AggressiveExplore\n\n"
+   }
+  ],
+  "cwd": "/home/aimilefth/cliouskos/HLS_Thesis/build"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_Status",
+ "dateTimestamp": "Thu May 21 20:11:00 2026",
+ "timestampMillis": "1779383460972",
+ "status": {
+  "cmdId": "76eb67cc-9ba7-412d-9306-314b6e7635b1",
+  "state": "CS_RUNNING"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_CmdStep",
+ "dateTimestamp": "Thu May 21 20:11:02 2026",
+ "timestampMillis": "1779383462874",
+ "buildStep": {
+  "cmdId": "46c94cac-78c6-42a0-b3ea-6ff8196d9dc2",
+  "name": "vpl",
+  "logFile": "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/link.steps.log",
+  "commandLine": "/home/Xilinx/Vitis/2023.2/bin/unwrapped/lnx64.o/vpl -t hw -f /opt/xilinx/platforms/xilinx_u55c_gen3x16_xdma_3_202210_1/xilinx_u55c_gen3x16_xdma_3_202210_1.xpfm -s --remote_ip_cache /home/aimilefth/cliouskos/HLS_Thesis/build/.ipcache --trace_memory HBM[0] --output_dir /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int --log_dir /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/logs/link --report_dir /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/reports/link --config /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/vplConfig.ini -k /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/kernel_info.dat --webtalk_flag Vitis --temp_dir /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link --no-info --iprepo /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/xo/ip_repo/xilinx_com_hls_architecture_top_level_1_0 --messageDb /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/run_link/vpl.pb /home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/dr.bd.tcl ",
+  "args": [],
+  "iniFiles": [],
+  "cwd": "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/run_link"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_Status",
+ "dateTimestamp": "Thu May 21 20:11:02 2026",
+ "timestampMillis": "1779383462874",
+ "status": {
+  "cmdId": "46c94cac-78c6-42a0-b3ea-6ff8196d9dc2",
+  "state": "CS_RUNNING"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_VivadoProject",
+ "dateTimestamp": "Thu May 21 20:11:08 2026",
+ "timestampMillis": "1779383468010",
+ "vivadoProject": {
+  "openDir": "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/vivado/vpl",
+  "openScript": "openprj.tcl",
+  "relativeProject": "prj/prj.xpr"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_SubCmdStep",
+ "dateTimestamp": "Thu May 21 20:11:08 2026",
+ "timestampMillis": "1779383468012",
+ "buildStep": {
+  "cmdId": "77407f1c-23ef-4089-a1d2-f1e00ac69d90",
+  "name": "vivado",
+  "logFile": "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/vivado/vpl/vivado.log",
+  "commandLine": "vivado -log vivado.log -applog -m64 -messageDb vivado.pb -mode batch -source vpl.tcl -notrace",
+  "args": [
+   "-log",
+   "vivado.log",
+   "-applog",
+   " -m64",
+   "-messageDb",
+   "vivado.pb",
+   "-mode",
+   "batch",
+   "-source",
+   "vpl.tcl",
+   "-notrace"
+  ],
+  "iniFiles": [],
+  "cwd": "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/run_link"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_Status",
+ "dateTimestamp": "Thu May 21 20:11:08 2026",
+ "timestampMillis": "1779383468013",
+ "status": {
+  "cmdId": "77407f1c-23ef-4089-a1d2-f1e00ac69d90",
+  "state": "CS_RUNNING"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_Report",
+ "dateTimestamp": "Thu May 21 20:11:54 2026",
+ "timestampMillis": "1779383514824",
+ "report": {
+  "path": "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/debug_ip_layout.rtd",
+  "name": "",
+  "fileType": "JSON",
+  "reportType": "DEBUG_IP_LAYOUT",
+  "cmdId": ""
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_Report",
+ "dateTimestamp": "Thu May 21 20:13:10 2026",
+ "timestampMillis": "1779383590170",
+ "report": {
+  "path": "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/int/automation_summary_pre_synthesis.txt",
+  "name": "",
+  "fileType": "TEXT",
+  "reportType": "VITIS_DESIGN_FLOW",
+  "cmdId": ""
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_CmdStep",
+ "dateTimestamp": "Thu May 21 20:22:37 2026",
+ "timestampMillis": "1779384157755",
+ "buildStep": {
+  "cmdId": "621dea22-9ba9-40da-9ac8-48a79f5af0ba",
+  "name": "vivado.impl",
+  "logFile": "",
+  "commandLine": "",
+  "args": [],
+  "iniFiles": [],
+  "cwd": "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/vivado/vpl"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_Status",
+ "dateTimestamp": "Thu May 21 20:22:37 2026",
+ "timestampMillis": "1779384157755",
+ "status": {
+  "cmdId": "621dea22-9ba9-40da-9ac8-48a79f5af0ba",
+  "state": "CS_RUNNING"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_CmdStep",
+ "dateTimestamp": "Thu May 21 20:22:37 2026",
+ "timestampMillis": "1779384157756",
+ "buildStep": {
+  "cmdId": "55907475-96a5-4cc1-8130-d52f5d8d2dee",
+  "name": "vivado.impl.impl_1",
+  "logFile": "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/vivado/vpl/prj/prj.runs/impl_1/runme.log",
+  "commandLine": "",
+  "args": [],
+  "iniFiles": [],
+  "cwd": "/home/aimilefth/cliouskos/HLS_Thesis/build/_x.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/link/vivado/vpl/prj/prj.runs/impl_1"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_Status",
+ "dateTimestamp": "Thu May 21 20:22:37 2026",
+ "timestampMillis": "1779384157756",
+ "status": {
+  "cmdId": "55907475-96a5-4cc1-8130-d52f5d8d2dee",
+  "state": "CS_RUNNING"
+ }
+}
+</ENTRY>
