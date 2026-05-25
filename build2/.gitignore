@@ -1,0 +1,6 @@
+hls_project
+_x.*
+.Xil
+.ipcache
+build_dir.*/
+*.log
