@@ -123,8 +123,8 @@ SYSROOT      ?= $(SYSROOT_PATH)/sysroots/cortexa72-cortexa53-xilinx-linux
 # IMPORTANT: this must match your unchanged SODA top function name.
 KERNEL_NAME ?= architecture_top_level
 
-KERNEL_DIR  ?= src
-HOST_DIR    ?= host
+KERNEL_DIR  ?= soda_src
+HOST_DIR    ?= soda_host
 
 KERNEL_CFG  ?= hls.cfg
 LINK_CFG    ?= system.cfg

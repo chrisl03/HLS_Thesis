@@ -9,7 +9,8 @@ template <int T_DEPTH, int T_ITER>
 void forwarding_module(hls::stream<data_t>& in, hls::stream<data_t>& out_next_fw, hls::stream<data_t>& out_pe) { 
     // if depth is 0 make it 1
     data_t buffer[T_DEPTH == 0 ? 1 : T_DEPTH];
-    #pragma HLS BIND_STORAGE variable=buffer type=ram_2p 
+    static_assert(T_DEPTH >= 1, "forwarding_module requires depth >= 1; use register_forward for depth-1 or split for depth-0");
+    #pragma HLS BIND_STORAGE variable=buffer type=ram_2p impl=bram
     int ptr = 0;
     
     for (int i = 0; i < T_ITER; i++) {
@@ -26,12 +27,27 @@ void forwarding_module(hls::stream<data_t>& in, hls::stream<data_t>& out_next_fw
     }
 }
 
+//fw but not used as a FIFO, just a FF
+template <int T_ITER>
+void register_forward(hls::stream<data_t>& in, hls::stream<data_t>& out_next,
+                      hls::stream<data_t>& out_pe) {
+    data_t reg = 0.0f;
+    for (int i = 0; i < T_ITER; i++) {
+        #pragma HLS PIPELINE II=1
+        data_t new_val = in.read();
+        out_next.write(reg);
+        out_pe.write(reg);
+        reg = new_val;
+    }
+}
+
 // New FW module used for all the intermediate PEs (same but writes to 3 different PEs)
 template <int T_DEPTH, int T_ITER>
 void forward_and_split_3(hls::stream<data_t>& in, hls::stream<data_t>& out_next_fw, 
                          hls::stream<data_t>& pe_center, hls::stream<data_t>& pe_left, hls::stream<data_t>& pe_right) {
     data_t buffer[T_DEPTH == 0 ? 1 : T_DEPTH];
-    #pragma HLS BIND_STORAGE variable=buffer type=ram_2p 
+    static_assert(T_DEPTH >= 1, "forward_and_split_3 requires depth >= 1");
+    #pragma HLS BIND_STORAGE variable=buffer type=ram_2p impl=bram
     int ptr = 0;
 
     for (int i = 0; i < T_ITER; i++) {
@@ -53,7 +69,7 @@ void forward_and_split_3(hls::stream<data_t>& in, hls::stream<data_t>& out_next_
 template <int T_DEPTH, int T_ITER>
 void terminal_forwarding_module(hls::stream<data_t>& in, hls::stream<data_t>& out_pe) {
     data_t buffer[T_DEPTH == 0 ? 1 : T_DEPTH];
-    #pragma HLS BIND_STORAGE variable=buffer type=ram_2p
+    #pragma HLS BIND_STORAGE variable=buffer type=ram_2p impl=bram
     int ptr = 0;
     
     for (int i = 0; i < T_ITER; i++) {
@@ -115,10 +131,10 @@ void soda_compute(hls::stream<data_t> A_in[K_FACTOR], hls::stream<data_t> B_out[
     #pragma HLS ARRAY_PARTITION variable=pe_up complete
 
     #pragma HLS STREAM variable=pe_down depth=16
-    #pragma HLS STREAM variable=pe_right depth=16
-    #pragma HLS STREAM variable=pe_center depth=16
-    #pragma HLS STREAM variable=pe_left depth=16
-    #pragma HLS STREAM variable=pe_up depth=16
+    #pragma HLS STREAM variable=pe_right depth=8
+    #pragma HLS STREAM variable=pe_center depth=8
+    #pragma HLS STREAM variable=pe_left depth=8
+    #pragma HLS STREAM variable=pe_up depth=8
 
     hls::stream<data_t> fw1[K_FACTOR], fw2[K_FACTOR], fw3[K_FACTOR], split[K_FACTOR];
     
@@ -126,6 +142,11 @@ void soda_compute(hls::stream<data_t> A_in[K_FACTOR], hls::stream<data_t> B_out[
     #pragma HLS ARRAY_PARTITION variable=fw2 complete
     #pragma HLS ARRAY_PARTITION variable=fw3 complete
     #pragma HLS ARRAY_PARTITION variable=split complete
+
+    #pragma HLS STREAM variable=fw1 depth=4
+    #pragma HLS STREAM variable=fw2 depth=4
+    #pragma HLS STREAM variable=fw3 depth=4
+    #pragma HLS STREAM variable=split depth=4
 
     for (int k = 0; k < K_FACTOR; k++) {
         #pragma HLS UNROLL
@@ -135,25 +156,25 @@ void soda_compute(hls::stream<data_t> A_in[K_FACTOR], hls::stream<data_t> B_out[
         }
         else if (k == 0) {
             // for first PE
-            forwarding_module<1, ITER>(A_in[k], fw1[k], pe_down[k]);
+            register_forward<ITER>(A_in[k], fw1[k], pe_down[k]); ///////////////////////
             // this one is the right element of the last calculation of previous cycle, thats why there is 1 less delay
             forwarding_module<VECTORS_PER_ROW - 1, ITER>(fw1[k], fw2[k], pe_right[K_FACTOR - 1]); 
-            forwarding_module<1, ITER>(fw2[k], fw3[k], split[k]);
+            register_forward<ITER>(fw2[k], fw3[k], split[k]);
             split_1_to_2<ITER>(split[k], pe_center[k], pe_left[k+1]);
             terminal_forwarding_module<VECTORS_PER_ROW, ITER>(fw3[k], pe_up[k]);
         }
         else if (k == K_FACTOR - 1) {
             // for last PE
-            forwarding_module<1, ITER>(A_in[k], fw1[k], pe_down[k]);
+            register_forward<ITER>(A_in[k], fw1[k], pe_down[k]);/////////////////////////
             forwarding_module<VECTORS_PER_ROW, ITER>(fw1[k], fw2[k], split[k]);
             split_1_to_2<ITER>(split[k], pe_center[k], pe_right[k-1]); 
             // element to the left of k=0 comes for the previous cycle
-            forwarding_module<1, ITER>(fw2[k], fw3[k], pe_left[0]);
+            register_forward<ITER>(fw2[k], fw3[k], pe_left[0]);
             terminal_forwarding_module<VECTORS_PER_ROW - 1, ITER>(fw3[k], pe_up[k]);
         }
         else {
             // all the intermediate ones. each one feeds symmetrically adjacent PEs in same cycle
-            forwarding_module<1, ITER>(A_in[k], fw1[k], pe_down[k]);
+            register_forward<ITER>(A_in[k], fw1[k], pe_down[k]);//////////////////////
             forward_and_split_3<VECTORS_PER_ROW, ITER>(fw1[k], fw2[k], pe_center[k], pe_left[k+1], pe_right[k-1]);
             terminal_forwarding_module<VECTORS_PER_ROW, ITER>(fw2[k], pe_up[k]);
         }

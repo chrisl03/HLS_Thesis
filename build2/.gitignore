@@ -4,3 +4,6 @@ _x.*
 .ipcache
 build_dir.*/
 *.log
+*.csv
+xrt.*
+v++*

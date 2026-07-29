@@ -6,8 +6,8 @@
 
 // TOP LEVEL
 void architecture_top_level(hls::burst_maxi<float16> A_in_mem, hls::burst_maxi<float_pack> B_out_mem) {
-    #pragma HLS INTERFACE m_axi port=A_in_mem bundle=gmem0 depth=SODA_BURSTS_IN
-    #pragma HLS INTERFACE m_axi port=B_out_mem bundle=gmem1 depth=SODA_TOTAL_PACKETS_OUT
+    #pragma HLS INTERFACE m_axi port=A_in_mem bundle=gmem0 max_read_burst_length=256 num_read_outstanding=16 depth=SODA_BURSTS_IN
+    #pragma HLS INTERFACE m_axi port=B_out_mem bundle=gmem1 max_write_burst_length=256 num_write_outstanding=16 depth=SODA_TOTAL_PACKETS_OUT
     #pragma HLS INTERFACE s_axilite port=return
 
     #pragma HLS DATAFLOW
@@ -20,10 +20,10 @@ void architecture_top_level(hls::burst_maxi<float16> A_in_mem, hls::burst_maxi<f
     hls::stream<float16>   pack_in_stream("pack_in_stream");
     hls::stream<float_pack> pack_stream("pack_stream");
     
-    #pragma HLS STREAM variable=in_streams depth=8 
-    #pragma HLS STREAM variable=out_streams depth=8
-    #pragma HLS STREAM variable=pack_in_stream depth=16 
-    #pragma HLS STREAM variable=pack_stream depth=16 
+    #pragma HLS STREAM variable=in_streams depth=8      //8
+    #pragma HLS STREAM variable=out_streams depth=8     //2
+    #pragma HLS STREAM variable=pack_in_stream depth=512  //2
+    #pragma HLS STREAM variable=pack_stream depth=512   //336
     
     load_input(A_in_mem, pack_in_stream);
     unpack_and_feed(pack_in_stream, in_streams);

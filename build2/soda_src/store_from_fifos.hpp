@@ -36,37 +36,49 @@ void filter_and_pack(hls::stream<data_t> in[SODA_K], hls::stream<float_pack>& ou
 
                 data_t valid_pixels[SODA_K];
                 #pragma HLS ARRAY_PARTITION variable=valid_pixels complete
+                #pragma HLS BIND_REGISTER variable=valid_pixels
                 for(int j = 0; j < SODA_K; j++) {
                     #pragma HLS UNROLL
                     valid_pixels[j] = (j < valid_count) ? curr_val[start_idx + j] : 0.0f;
                 }
 
-                data_t merged[2 * SODA_K];
-                #pragma HLS ARRAY_PARTITION variable=merged complete
-                
-                for (int j = 0; j < SODA_K; j++) {
-                    #pragma HLS UNROLL
-                    merged[j] = buffer[j];
-                    merged[SODA_K + j] = 0.0f; 
-                }
-                for (int j = 0; j < SODA_K; j++) {
-                    #pragma HLS UNROLL
-                    merged[buf_count + j] = valid_pixels[j];
-                }
-
-                int new_total = buf_count + valid_count;
+               int new_total = buf_count + valid_count;
 
                 if (new_total >= SODA_K) {
                     float_pack pack;
-                    for (int j = 0; j < SODA_K; j++) pack[j] = merged[j];
-                    
+                    // 1. Γέμισμα του Output Pack απευθείας από buffer και valid_pixels
+                    for (int j = 0; j < SODA_K; j++) {
+                        #pragma HLS UNROLL
+                        if (j < buf_count) {
+                            pack[j] = buffer[j];
+                        } else {
+                            pack[j] = valid_pixels[j - buf_count];
+                        }
+                    }
                     out_stream.write(pack);
 
-                    buf_count = new_total - SODA_K;
-                    for (int j = 0; j < SODA_K; j++) buffer[j] = merged[SODA_K + j];
+                    // 2. Υπολογισμός του νέου buffer απευθείας από τα valid_pixels που περίσσεψαν
+                    int next_buf_count = new_total - SODA_K;
+                    for (int j = 0; j < SODA_K; j++) {
+                        #pragma HLS UNROLL
+                        int valid_idx = SODA_K + j - buf_count;
+                        if (valid_idx < valid_count) {
+                            buffer[j] = valid_pixels[valid_idx];
+                        } else {
+                            buffer[j] = 0.0f;
+                        }
+                    }
+                    buf_count = next_buf_count;
+
                 } else {
+                    // Δεν φτάσαμε τα SODA_K, απλά προσθέτουμε τα νέα pixels στο buffer
+                    for (int j = 0; j < SODA_K; j++) {
+                        #pragma HLS UNROLL
+                        if (j >= buf_count && (j - buf_count) < valid_count) {
+                            buffer[j] = valid_pixels[j - buf_count];
+                        }
+                    }
                     buf_count = new_total;
-                    for (int j = 0; j < SODA_K; j++) buffer[j] = merged[j];
                 }
 
                 if (row == SODA_ROWS - 2 && col_cycle == VECTORS_PER_ROW - 1) done = true;
