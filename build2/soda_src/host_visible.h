@@ -9,7 +9,7 @@
 
 // basic params
 #define SODA_K 16
-#define SODA_ROWS 16
+#define SODA_ROWS 1024
 #define SODA_COLS 1024
 
 // derived parameters 

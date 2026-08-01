@@ -26,6 +26,15 @@ void filter_and_pack(hls::stream<data_t> in[SODA_K], hls::stream<float_pack>& ou
 
         int true_cycle = i - SODA_DELAY;
 
+        // writing buffer to buff in and then using it, because without it I had error
+        data_t buf_in[SODA_K];
+        #pragma HLS ARRAY_PARTITION variable=buf_in complete
+        for (int j = 0; j < SODA_K; j++) {
+            #pragma HLS UNROLL
+            buf_in[j] = buffer[j];
+        }
+        int bc = buf_count; 
+
         if (true_cycle >= 0 && true_cycle < TOTAL_VECTORS) {
             int row = true_cycle / VECTORS_PER_ROW;
             int col_cycle = true_cycle % VECTORS_PER_ROW;
@@ -36,47 +45,58 @@ void filter_and_pack(hls::stream<data_t> in[SODA_K], hls::stream<float_pack>& ou
 
                 data_t valid_pixels[SODA_K];
                 #pragma HLS ARRAY_PARTITION variable=valid_pixels complete
-                #pragma HLS BIND_REGISTER variable=valid_pixels
                 for(int j = 0; j < SODA_K; j++) {
                     #pragma HLS UNROLL
                     valid_pixels[j] = (j < valid_count) ? curr_val[start_idx + j] : 0.0f;
                 }
 
-               int new_total = buf_count + valid_count;
+                int new_total = bc + valid_count;
 
                 if (new_total >= SODA_K) {
                     float_pack pack;
-                    // 1. Γέμισμα του Output Pack απευθείας από buffer και valid_pixels
                     for (int j = 0; j < SODA_K; j++) {
                         #pragma HLS UNROLL
-                        if (j < buf_count) {
-                            pack[j] = buffer[j];
-                        } else {
-                            pack[j] = valid_pixels[j - buf_count];
+                        data_t sel = buf_in[j];
+                        for (int b = 0; b < SODA_K; b++) {
+                            #pragma HLS UNROLL
+                            if (bc == b) {
+                                sel = (j < b) ? buf_in[j] : valid_pixels[j - b];
+                            }
                         }
+                        pack[j] = sel;
                     }
                     out_stream.write(pack);
 
-                    // 2. Υπολογισμός του νέου buffer απευθείας από τα valid_pixels που περίσσεψαν
                     int next_buf_count = new_total - SODA_K;
                     for (int j = 0; j < SODA_K; j++) {
                         #pragma HLS UNROLL
-                        int valid_idx = SODA_K + j - buf_count;
-                        if (valid_idx < valid_count) {
-                            buffer[j] = valid_pixels[valid_idx];
-                        } else {
-                            buffer[j] = 0.0f;
+                        data_t nv = 0.0f;
+                        for (int b = 0; b < SODA_K; b++) {
+                            #pragma HLS UNROLL
+                            if (bc == b) {
+                                int vidx = SODA_K + j - b;  
+                                if (vidx >= 0 && vidx < SODA_K && vidx < valid_count) {
+                                    nv = valid_pixels[vidx];
+                                }
+                            }
                         }
+                        buffer[j] = nv;
                     }
                     buf_count = next_buf_count;
 
                 } else {
-                    // Δεν φτάσαμε τα SODA_K, απλά προσθέτουμε τα νέα pixels στο buffer
                     for (int j = 0; j < SODA_K; j++) {
                         #pragma HLS UNROLL
-                        if (j >= buf_count && (j - buf_count) < valid_count) {
-                            buffer[j] = valid_pixels[j - buf_count];
+                        data_t nv = buf_in[j];
+                        for (int b = 0; b < SODA_K; b++) {
+                            #pragma HLS UNROLL
+                            if (bc == b) {
+                                if (j >= b && (j - b) < valid_count) {
+                                    nv = valid_pixels[j - b];
+                                }
+                            }
                         }
+                        buffer[j] = nv;
                     }
                     buf_count = new_total;
                 }
@@ -87,21 +107,17 @@ void filter_and_pack(hls::stream<data_t> in[SODA_K], hls::stream<float_pack>& ou
         else {
             if (done && dummy_count < 16) {
                 float_pack dummy_pack;
-
                 for (int j = 0; j < SODA_K; j++) {
                     #pragma HLS UNROLL
-                    dummy_pack[j] = (dummy_count == 0 && j < buf_count) ? buffer[j] : 0.0f;
+                    dummy_pack[j] = (dummy_count == 0 && j < bc) ? buf_in[j] : 0.0f;
                 }
-
-                if (dummy_count == 0) buf_count = 0; 
-
+                if (dummy_count == 0) buf_count = 0;
                 out_stream.write(dummy_pack);
                 dummy_count++;
             }
         }
     }
 }
-
 void store_output(hls::stream<float_pack>& in_stream, hls::burst_maxi<float_pack>& out_mem) {
     #pragma HLS INLINE off
     out_mem.write_request(0, SODA_TOTAL_PACKETS_OUT);

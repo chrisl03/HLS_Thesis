@@ -8,8 +8,8 @@
 #define CEIL_DIV(X, Y) (((X) + (Y) - 1) / (Y))
 
 // basic params
-#define SODA_K 8
-#define SODA_ROWS 16
+#define SODA_K 16
+#define SODA_ROWS 1024
 #define SODA_COLS 1024
 
 // derived parameters 
