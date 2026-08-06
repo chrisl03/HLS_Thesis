@@ -1,6 +1,8 @@
-//  tb_soda.cpp
+//  tb_soda.cpp  (parametric K=16 / K=32, 2R+2W)
+//  Packing χειριζεται και τις 2 περιπτωσεις μεσω BURSTS_PER_VEC.
 
 #include "host_soda_fpga.h"
+#include "host_visible.h"
 #include <iostream>
 #include <vector>
 #include <cstdlib>
@@ -9,29 +11,20 @@
 typedef float data_t;
 
 // ==========================================
-// GOLDEN MODEL (C++ Software Reference)\
+// GOLDEN MODEL
 // ==========================================
 void compute_golden(const std::vector<data_t>& A_vec, std::vector<data_t>& B_golden_vec) {
-    std::cout << "  [Golden] Starting golden computation (Discarding Borders)..." << std::endl;
+    std::cout << "  [Golden] Starting golden computation (Discarding Borders)...\n";
     B_golden_vec.clear();
-
     for (int i = 1; i < SODA_ROWS - 1; i++) {
         for (int j = 1; j < SODA_COLS - 1; j++) {
-            data_t a00  = A_vec[i * SODA_COLS + j];       
-            data_t a10  = A_vec[(i + 1) * SODA_COLS + j]; 
-            data_t a01  = A_vec[i * SODA_COLS + (j + 1)]; 
-            data_t a0m1 = A_vec[i * SODA_COLS + (j - 1)]; 
-            data_t am10 = A_vec[(i - 1) * SODA_COLS + j]; 
-
-            data_t res_0 = a00 - a0m1;
-            data_t res_1 = a00 - a01;
-            data_t res_2 = a00 - am10;
-            data_t res_3 = a00 - a10;
-
-            data_t b_val = (res_0 * res_0) + (res_1 * res_1) +
-                           (res_2 * res_2) + (res_3 * res_3);
-
-            B_golden_vec.push_back(b_val);
+            data_t a00  = A_vec[i * SODA_COLS + j];
+            data_t a10  = A_vec[(i + 1) * SODA_COLS + j];
+            data_t a01  = A_vec[i * SODA_COLS + (j + 1)];
+            data_t a0m1 = A_vec[i * SODA_COLS + (j - 1)];
+            data_t am10 = A_vec[(i - 1) * SODA_COLS + j];
+            data_t r0 = a00 - a0m1, r1 = a00 - a01, r2 = a00 - am10, r3 = a00 - a10;
+            B_golden_vec.push_back(r0*r0 + r1*r1 + r2*r2 + r3*r3);
         }
     }
     std::cout << "  [Golden] Finished. Produced " << B_golden_vec.size() << " valid outputs.\n";
@@ -39,90 +32,96 @@ void compute_golden(const std::vector<data_t>& A_vec, std::vector<data_t>& B_gol
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::cerr << "Usage:\n  " << argv[0] << " <xclbin_path> [device_index] [iterations]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <xclbin> [device_idx] [iters]\n";
         return 1;
     }
-
     const std::string xclbin_path = argv[1];
     const unsigned device_index = (argc >= 3) ? (unsigned)std::stoul(argv[2]) : 0;
     const unsigned iterations   = (argc >= 4) ? (unsigned)std::stoul(argv[3]) : 1;
 
-    std::vector<data_t> A_flat_vector(SODA_TOTAL_PIXELS);
-    std::vector<data_t> B_golden_vector;
+    std::vector<data_t> A_flat(SODA_TOTAL_PIXELS);
+    std::vector<data_t> B_golden;
+    for (int i = 0; i < SODA_TOTAL_PIXELS; i++)
+        A_flat[i] = (data_t)(i % 256) / 10.0f;
 
-    // input innit
-    for (int i = 0; i < SODA_TOTAL_PIXELS; i++) {
-        A_flat_vector[i] = (data_t)(i % 256) / 10.0f;
-    }
+    compute_golden(A_flat, B_golden);
 
-    compute_golden(A_flat_vector, B_golden_vector);
-
-    //  FPGA innit
     FPGA_SODA fpga;
     if (fpga.fpga_init(xclbin_path, device_index) != 0) {
-        std::cerr << "FPGA init failed." << std::endl;
+        std::cerr << "FPGA init failed.\n";
         return 1;
     }
 
-    // 3. Serialize inputs directly into XRT mapped BO memory
-    float* A_in_hw = fpga.get_inA_ptr();
-    std::cout << "[TB] Packing " << SODA_TOTAL_PIXELS << " floats into 512-bit bursts...\n";
-    for (int i = 0; i < SODA_BURSTS_IN; i++) {
-        for (int j = 0; j < 16; j++) {
-            A_in_hw[i * 16 + j] = A_flat_vector[i * 16 + j];
-        }
-    }
+    float* A0 = fpga.get_inA0_ptr();
+    float* A1 = fpga.get_inA1_ptr();
 
-    // Optional warmup
-    fpga.warmup(1);
+    // ------------------------------------------------------------------
+    // PACKING - χειριζεται K=16 και K=32 μεσω BURSTS_PER_VEC.
+    // Το load_input διαβαζει: για καθε vector i, BURSTS_PER_VEC bursts.
+    //
+    //  K=16 (BURSTS_PER_VEC=1): vector i = 1 burst, εναλλαξ channel (i%2).
+    //       -> burst i πηγαινει channel (i%2), θεση i/2.
+    //
+    //  K=32 (BURSTS_PER_VEC=2): vector i = 2 bursts (b0,b1) παραλληλα.
+    //       -> channel0[i] = πρωτο μισο (floats 0..15) του vector i
+    //          channel1[i] = δευτερο μισο (floats 16..31) του vector i
+    // ------------------------------------------------------------------
+    std::cout << "[TB] Packing (K=" << SODA_K << ", BURSTS_PER_VEC="
+              << BURSTS_PER_VEC << ")...\n";
 
-    // 4. Run Kernel
-    for (unsigned i = 0; i < iterations; ++i) {
-        fpga.run();
-    }
-
-    std::cout << "[TB] Verifying results...\n";
-    const float* B_out_hw = fpga.get_outB_ptr();
-    
-    bool pass = true;
-    int errors = 0;
-    const float tol = 0.001f;
-
-    for (int i = 0; i < SODA_KERNEL_ITER; i++) {
-        int pack_idx = i / SODA_K;
-        int elem_idx = i % SODA_K;
-        
-        float hls_result = B_out_hw[pack_idx * SODA_K + elem_idx];
-        float golden_result = B_golden_vector[i];
-
-        if (std::abs(hls_result - golden_result) > tol) {
-            pass = false;
-            errors++;
-            if (errors <= 5) {
-                int row = (i / SODA_KERNEL_COLS) + 1;
-                int col = (i % SODA_KERNEL_COLS) + 1;
-                std::cout << "  [ERROR] Mismatch at index " << i 
-                          << " (Row: " << row << ", Col: " << col 
-                          << ") -> HLS: " << hls_result 
-                          << ", SW: " << golden_result << std::endl;
+    for (int v = 0; v < TOTAL_VECTORS; v++) {
+        if (BURSTS_PER_VEC == 1) {
+            // K=16: ενα burst (16 floats) = ενα vector, εναλλαξ channel
+            float* dst = ((v & 1) == 0) ? A0 : A1;
+            int pos = v / 2;
+            for (int j = 0; j < 16; j++)
+                dst[pos * 16 + j] = A_flat[v * 16 + j];
+        } else {
+            // K=32: vector v = floats [v*32 .. v*32+31]
+            //   channel0[v] = floats 0..15,  channel1[v] = floats 16..31
+            for (int j = 0; j < 16; j++) {
+                A0[v * 16 + j] = A_flat[v * 32 + j];
+                A1[v * 16 + j] = A_flat[v * 32 + 16 + j];
             }
         }
     }
 
-    std::cout << "Total mismatches: " << errors << std::endl;
+    fpga.warmup(1);
+    for (unsigned it = 0; it < iterations; ++it) fpga.run();
 
+    std::cout << "[TB] Verifying...\n";
+    const float* B0 = fpga.get_outB0_ptr();
+    const float* B1 = fpga.get_outB1_ptr();
+
+    int errors = 0;
+    const float tol = 0.001f;
+    for (int i = 0; i < SODA_KERNEL_ITER; i++) {
+        int pack_idx = i / SODA_K;
+        int elem_idx = i % SODA_K;
+        // output packs interleaved: pack pack_idx -> channel (pack_idx%2)
+        const float* src = ((pack_idx & 1) == 0) ? B0 : B1;
+        int pack_pos = pack_idx / 2;
+        float hls_result = src[pack_pos * SODA_K + elem_idx];
+        float golden = B_golden[i];
+        if (std::abs(hls_result - golden) > tol) {
+            errors++;
+            if (errors <= 5) {
+                int row = (i / SODA_KERNEL_COLS) + 1;
+                int col = (i % SODA_KERNEL_COLS) + 1;
+                std::cout << "  [ERROR] idx " << i << " (R" << row << ",C" << col
+                          << ") HLS=" << hls_result << " SW=" << golden << "\n";
+            }
+        }
+    }
+
+    std::cout << "Total mismatches: " << errors << "\n";
     fpga.print_performance_timings();
     fpga.save_results_to_csv("benchmark_soda.csv");
 
-    if (!pass) {
-        std::cerr << "=======================================\n";
-        std::cerr << "  TEST FAILED! " << errors << " mismatches found.\n";
-        std::cerr << "=======================================\n";
+    if (errors) {
+        std::cerr << "=== TEST FAILED! " << errors << " mismatches ===\n";
         return 1;
     }
-
-    std::cout << "=======================================\n";
-    std::cout << "  TEST PASSED! 0 errors detected.\n";
-    std::cout << "=======================================\n";
+    std::cout << "=== TEST PASSED! 0 errors ===\n";
     return 0;
 }

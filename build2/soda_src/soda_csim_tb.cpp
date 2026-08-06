@@ -1,120 +1,83 @@
-//  soda_csim_tb.cpp
-#include <stdio.h>   
-#include <iostream>
+//  soda_csim_tb.cpp  (parametric K=16 / K=32, 2R+2W) - για Vitis HLS C-sim/cosim
+#include <stdio.h>
 #include <vector>
 #include <cmath>
-
-// Κάνουμε include ΟΛΗ την υποδομή του Hardware μας!
 #include "soda_common.h"
 
-// ==========================================
-// GOLDEN MODEL (C++ Software Reference)
-// ==========================================
-void compute_golden(std::vector<data_t>& A_vec, std::vector<data_t>& B_golden_vec) {
-    printf("  [Golden] Starting golden computation (Discarding Borders)...\n");
-    B_golden_vec.clear();
-
-    for (int i = 1; i < SODA_ROWS - 1; i++) {
+void compute_golden(std::vector<data_t>& A, std::vector<data_t>& B) {
+    printf("  [Golden] computing (discarding borders)...\n");
+    B.clear();
+    for (int i = 1; i < SODA_ROWS - 1; i++)
         for (int j = 1; j < SODA_COLS - 1; j++) {
-            data_t a00  = A_vec[i * SODA_COLS + j];       
-            data_t a10  = A_vec[(i + 1) * SODA_COLS + j]; 
-            data_t a01  = A_vec[i * SODA_COLS + (j + 1)]; 
-            data_t a0m1 = A_vec[i * SODA_COLS + (j - 1)]; 
-            data_t am10 = A_vec[(i - 1) * SODA_COLS + j]; 
-
-            data_t res_0 = a00 - a0m1;
-            data_t res_1 = a00 - a01;
-            data_t res_2 = a00 - am10;
-            data_t res_3 = a00 - a10;
-
-            data_t b_val = (res_0 * res_0) + (res_1 * res_1) +
-                           (res_2 * res_2) + (res_3 * res_3);
-
-            B_golden_vec.push_back(b_val);
+            data_t a00=A[i*SODA_COLS+j], a10=A[(i+1)*SODA_COLS+j], a01=A[i*SODA_COLS+j+1];
+            data_t a0m1=A[i*SODA_COLS+j-1], am10=A[(i-1)*SODA_COLS+j];
+            data_t r0=a00-a0m1, r1=a00-a01, r2=a00-am10, r3=a00-a10;
+            B.push_back(r0*r0+r1*r1+r2*r2+r3*r3);
         }
-    }
-    printf("  [Golden] Finished. Produced %zu valid outputs.\n", B_golden_vec.size());
+    printf("  [Golden] produced %zu outputs.\n", B.size());
 }
 
-// ==========================================
-// MAIN TESTBENCH
-// ==========================================   
 int main() {
-    
-    printf("[TB] Starting Generic SODA Testbench (K=%d)...\n", SODA_K);
+    printf("[TB] SODA csim (K=%d, BURSTS_PER_VEC=%d)...\n", SODA_K, BURSTS_PER_VEC);
 
-    std::vector<data_t> A_flat_vector(SODA_TOTAL_PIXELS);
-    std::vector<data_t> B_golden_vector;
-    
-    // 1. Αρχικοποίηση εισόδου με test τιμές
-    for (int i = 0; i < SODA_TOTAL_PIXELS; i++) {
-        A_flat_vector[i] = (data_t)(i % 256) / 10.0f;
-    }
+    std::vector<data_t> A_flat(SODA_TOTAL_PIXELS);
+    std::vector<data_t> B_golden;
+    for (int i = 0; i < SODA_TOTAL_PIXELS; i++) A_flat[i] = (data_t)(i % 256) / 10.0f;
+    compute_golden(A_flat, B_golden);
 
-    compute_golden(A_flat_vector, B_golden_vector);
+    // buffer sizes (σε bursts/packets ανα channel)
+    int bursts_0 = SODA_BURSTS_IN_0, bursts_1 = SODA_BURSTS_IN_1;
+    int packets_0 = SODA_PACKETS_OUT_0, packets_1 = SODA_PACKETS_OUT_1;
 
-    // 2. Δέσμευση Μνήμης (Hardware Buffers)
-    // Χρησιμοποιούμε τα έτοιμα macros από το host_visible.h!
-    float16* A_in_hw = new float16[SODA_BURSTS_IN];
-    float_pack* B_out_hw = new float_pack[SODA_TOTAL_PACKETS_OUT];
+    float16* A_in_0 = new float16[bursts_0 > 0 ? bursts_0 : 1];
+    float16* A_in_1 = new float16[bursts_1 > 0 ? bursts_1 : 1];
+    float_pack* B_out_0 = new float_pack[packets_0 > 0 ? packets_0 : 1];
+    float_pack* B_out_1 = new float_pack[packets_1 > 0 ? packets_1 : 1];
 
-    // --- GENERIC PACKING ΕΙΣΟΔΟΥ ---
-    printf("[TB] Packing %d floats into %d 512-bit bursts...\n", SODA_TOTAL_PIXELS, SODA_BURSTS_IN);
-    for (int i = 0; i < SODA_BURSTS_IN; i++) {
-        for (int j = 0; j < 16; j++) {
-            A_in_hw[i][j] = A_flat_vector[i * 16 + j];
+    // --- PACKING (K=16 εναλλαξ / K=32 split) ---
+    for (int v = 0; v < TOTAL_VECTORS; v++) {
+        if (BURSTS_PER_VEC == 1) {
+            float16 tmp;
+            for (int j = 0; j < 16; j++) tmp[j] = A_flat[v * 16 + j];
+            if ((v & 1) == 0) A_in_0[v / 2] = tmp;
+            else              A_in_1[v / 2] = tmp;
+        } else {
+            float16 t0, t1;
+            for (int j = 0; j < 16; j++) {
+                t0[j] = A_flat[v * 32 + j];
+                t1[j] = A_flat[v * 32 + 16 + j];
+            }
+            A_in_0[v] = t0;
+            A_in_1[v] = t1;
         }
     }
 
-    // Καθαρισμός εξόδου
-    for (int i = 0; i < SODA_TOTAL_PACKETS_OUT; i++) {
-        for(int j = 0; j < SODA_K; j++) {
-            B_out_hw[i][j] = 0.0f;
-        }
-    }
+    for (int i = 0; i < packets_0; i++) for (int j = 0; j < SODA_K; j++) B_out_0[i][j] = 0.0f;
+    for (int i = 0; i < packets_1; i++) for (int j = 0; j < SODA_K; j++) B_out_1[i][j] = 0.0f;
 
-    hls::burst_maxi<float16> A_in_maxi(A_in_hw); 
-    hls::burst_maxi<float_pack> B_out_maxi(B_out_hw);
+    hls::burst_maxi<float16>    A0(A_in_0), A1(A_in_1);
+    hls::burst_maxi<float_pack> B0(B_out_0), B1(B_out_1);
 
-    // 3. Εκτέλεση του Hardware
-    printf("[TB] Running Hardware Top Level...\n");
-    architecture_top_level(A_in_maxi, B_out_maxi);
+    printf("[TB] Running...\n");
+    architecture_top_level(A0, A1, B0, B1);
 
-    // 4. Επαλήθευση (Generic Unpacking)
-    printf("[TB] Verifying results...\n");
+    printf("[TB] Verifying...\n");
     int errors = 0;
-
     for (int i = 0; i < SODA_KERNEL_ITER; i++) {
-        // Μαθηματικά για να βρούμε σε ποιο struct και σε ποια θέση είναι το πίξελ μας
-        int pack_idx = i / SODA_K;
-        int elem_idx = i % SODA_K;
-        
-        data_t hls_result = B_out_hw[pack_idx][elem_idx];
-        data_t golden_result = B_golden_vector[i];
-
-        if (std::abs(hls_result - golden_result) > 0.001f) {
+        int pack_idx = i / SODA_K, elem_idx = i % SODA_K;
+        float_pack pk = ((pack_idx & 1) == 0) ? B_out_0[pack_idx/2] : B_out_1[pack_idx/2];
+        data_t hls_r = pk[elem_idx];
+        if (std::abs(hls_r - B_golden[i]) > 0.001f) {
             errors++;
-            if (errors <= 5) { // Τυπώνουμε μόνο τα 5 πρώτα λάθη για να μη γεμίσει η οθόνη
-                int row = (i / SODA_KERNEL_COLS) + 1;
-                int col = (i % SODA_KERNEL_COLS) + 1;
-                printf("  [ERROR] Mismatch at index %d (Row: %d, Col: %d) -> HLS: %f, SW: %f\n",
-                       i, row, col, hls_result, golden_result);
+            if (errors <= 5) {
+                int row = (i / SODA_KERNEL_COLS) + 1, col = (i % SODA_KERNEL_COLS) + 1;
+                printf("  [ERROR] idx %d (R%d,C%d) HLS=%f SW=%f\n", i, row, col, hls_r, B_golden[i]);
             }
         }
     }
 
-    delete[] A_in_hw;
-    delete[] B_out_hw;
+    delete[] A_in_0; delete[] A_in_1; delete[] B_out_0; delete[] B_out_1;
 
-    if (errors == 0) {
-        printf("\n=======================================\n");
-        printf("  TEST PASSED! 0 errors detected.      \n");
-        printf("=======================================\n");
-        return 0;
-    } else {
-        printf("\n=======================================\n");
-        printf("  TEST FAILED! %d mismatches found.    \n", errors);
-        printf("=======================================\n");
-        return 1;
-    }
+    if (errors == 0) { printf("\n=== TEST PASSED! 0 errors ===\n"); return 0; }
+    printf("\n=== TEST FAILED! %d mismatches ===\n", errors); return 1;
 }
