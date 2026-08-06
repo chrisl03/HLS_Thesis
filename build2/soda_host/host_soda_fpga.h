@@ -27,24 +27,33 @@ public:
     void run_benchmark_hostdatatransfer(unsigned int iterations);
     void print_performance_timings() const;
     void save_results_to_csv(const std::string& filename) const;
-    
-    // ins outs
-    float* get_inA_ptr();
-    float* get_outB_ptr();
 
-    // sizes (in floats)
-    static constexpr std::size_t A_ELEMS = SODA_BURSTS_IN * 16;
-    static constexpr std::size_t B_ELEMS = SODA_TOTAL_PACKETS_OUT * SODA_K;
+    // ins outs -- 2 input halves, 2 output halves (interleaved)
+    float* get_inA0_ptr();
+    float* get_inA1_ptr();
+    float* get_outB0_ptr();
+    float* get_outB1_ptr();
+
+    // sizes (in floats). Κάθε channel παίρνει τα μισά bursts/packets.
+    static constexpr std::size_t A0_ELEMS = SODA_BURSTS_IN_0   * 16;
+    static constexpr std::size_t A1_ELEMS = SODA_BURSTS_IN_1   * 16;
+    static constexpr std::size_t B0_ELEMS = SODA_PACKETS_OUT_0 * SODA_K;
+    static constexpr std::size_t B1_ELEMS = SODA_PACKETS_OUT_1 * SODA_K;
 
 private:
     xrt::device device;
     xrt::kernel soda_kernel;
 
-    xrt::bo inA_bo;
-    xrt::bo outB_bo;
+    // 2 input + 2 output buffer objects
+    xrt::bo inA0_bo;
+    xrt::bo inA1_bo;
+    xrt::bo outB0_bo;
+    xrt::bo outB1_bo;
 
-    float* inA_host_ptr;
-    float* outB_host_ptr;
+    float* inA0_host_ptr;
+    float* inA1_host_ptr;
+    float* outB0_host_ptr;
+    float* outB1_host_ptr;
 
     xrt::run run_soda;
 

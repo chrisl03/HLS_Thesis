@@ -5,9 +5,14 @@
 #include "store_from_fifos.hpp"
 
 // TOP LEVEL
-void architecture_top_level(hls::burst_maxi<float16> A_in_mem, hls::burst_maxi<float_pack> B_out_mem) {
-    #pragma HLS INTERFACE m_axi port=A_in_mem bundle=gmem0 max_read_burst_length=256 num_read_outstanding=16 depth=SODA_BURSTS_IN
-    #pragma HLS INTERFACE m_axi port=B_out_mem bundle=gmem1 max_write_burst_length=256 num_write_outstanding=16 depth=SODA_TOTAL_PACKETS_OUT
+void architecture_top_level(hls::burst_maxi<float16> A_in_mem_0,
+                            hls::burst_maxi<float16> A_in_mem_1,
+                            hls::burst_maxi<float_pack> B_out_mem_0,
+                            hls::burst_maxi<float_pack> B_out_mem_1) {
+    #pragma HLS INTERFACE m_axi port=A_in_mem_0 bundle=gmem0 max_read_burst_length=256 num_read_outstanding=16 depth=SODA_BURSTS_IN_0
+    #pragma HLS INTERFACE m_axi port=A_in_mem_1 bundle=gmem1 max_read_burst_length=256 num_read_outstanding=16 depth=SODA_BURSTS_IN_1
+    #pragma HLS INTERFACE m_axi port=B_out_mem_0 bundle=gmem2 max_write_burst_length=256 num_write_outstanding=16 depth=SODA_PACKETS_OUT_0
+    #pragma HLS INTERFACE m_axi port=B_out_mem_1 bundle=gmem3 max_write_burst_length=256 num_write_outstanding=16 depth=SODA_PACKETS_OUT_1
     #pragma HLS INTERFACE s_axilite port=return
 
     #pragma HLS DATAFLOW
@@ -17,7 +22,7 @@ void architecture_top_level(hls::burst_maxi<float16> A_in_mem, hls::burst_maxi<f
     #pragma HLS ARRAY_PARTITION variable=in_streams complete
     #pragma HLS ARRAY_PARTITION variable=out_streams complete
 
-    hls::stream<float16>   pack_in_stream("pack_in_stream");
+    hls::stream<float16> pack_in_stream("pack_in_stream");
     hls::stream<float_pack> pack_stream("pack_stream");
     
     #pragma HLS STREAM variable=in_streams depth=8      //8
@@ -25,11 +30,9 @@ void architecture_top_level(hls::burst_maxi<float16> A_in_mem, hls::burst_maxi<f
     #pragma HLS STREAM variable=pack_in_stream depth=512  //2
     #pragma HLS STREAM variable=pack_stream depth=512   //336
     
-    load_input(A_in_mem, pack_in_stream);
+    load_input(A_in_mem_0, A_in_mem_1, pack_in_stream);
     unpack_and_feed(pack_in_stream, in_streams);
-
     soda_compute<SODA_K, TOTAL_ITERATIONS>(in_streams, out_streams);
-
     filter_and_pack(out_streams, pack_stream);
-    store_output(pack_stream, B_out_mem);
+    store_output(pack_stream, B_out_mem_0, B_out_mem_1);
 }

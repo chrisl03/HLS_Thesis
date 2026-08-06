@@ -118,16 +118,28 @@ void filter_and_pack(hls::stream<data_t> in[SODA_K], hls::stream<float_pack>& ou
         }
     }
 }
-void store_output(hls::stream<float_pack>& in_stream, hls::burst_maxi<float_pack>& out_mem) {
+void store_output(hls::stream<float_pack>& in_stream,
+                  hls::burst_maxi<float_pack>& out_mem_0,
+                  hls::burst_maxi<float_pack>& out_mem_1) {
     #pragma HLS INLINE off
-    out_mem.write_request(0, SODA_TOTAL_PACKETS_OUT);
-    
+    int packets_0 = (SODA_TOTAL_PACKETS_OUT + 1) / 2;
+    int packets_1 = SODA_TOTAL_PACKETS_OUT / 2;
+
+    out_mem_0.write_request(0, packets_0);
+    out_mem_1.write_request(0, packets_1);
+
     for (int i = 0; i < SODA_TOTAL_PACKETS_OUT; i++) {
         #pragma HLS PIPELINE II=1
-        out_mem.write(in_stream.read());
+        float_pack val = in_stream.read();
+        if ((i & 1) == 0) {
+            out_mem_0.write(val);   // άρτιο -> channel 0
+        } else {
+            out_mem_1.write(val);   // περιττό -> channel 1
+        }
     }
 
-    out_mem.write_response();
+    out_mem_0.write_response();
+    out_mem_1.write_response();
 }
 
 #endif // STORE_FROM_FIFOS_HPP
