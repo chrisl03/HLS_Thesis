@@ -30,7 +30,7 @@ void unpack_and_feed(hls::stream<float16>& in_stream, hls::stream<data_t> out[SO
     #pragma HLS INLINE off
 
     if (SODA_K <= 16) {
-        // ---- ΠΑΛΙΟ WORKING μονοπατι (K<=16) με word_index ----
+        // K=16
         float16 chunk;
         #pragma HLS ARRAY_PARTITION variable=chunk complete
 
@@ -53,7 +53,7 @@ void unpack_and_feed(hls::stream<float16>& in_stream, hls::stream<data_t> out[SO
             }
         }
     } else {
-        // ---- K=32: 2 float16 bursts ανα vector -> 32 lanes ----
+        //  K=32
         for (int i = 0; i < TOTAL_ITERATIONS; i++) {
             #pragma HLS PIPELINE II=1
             if (i < TOTAL_VECTORS) {
