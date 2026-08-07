@@ -1,16 +1,10 @@
-// load_to_fifos.hpp  (float16 stream + word_index - παλιο working για K=16, + K=32)
+// load_to_fifos.hpp
 #ifndef LOAD_TO_FIFOS_HPP
 #define LOAD_TO_FIFOS_HPP
 
 #include "soda_common.h"
 
-// -------------------------------------------------------------------------
-// load_input: διαβαζει εναλλαξ απο 2 HBM channels -> ΕΝΑ float16 stream.
-// (float16 = raw 512-bit burst, το φυσικο width που δουλευε στο hardware)
-//
-//   Και για K=16 και K=32 το output ειναι float16 bursts στη σωστη σειρα:
-//   burst 0,1,2,3,... (channel 0 τα αρτια, channel 1 τα περιττα).
-// -------------------------------------------------------------------------
+//reads serially from 2 hbms with float16 output (0 even 1 odd)
 void load_input(hls::burst_maxi<float16>& in_mem_0,
                 hls::burst_maxi<float16>& in_mem_1,
                 hls::stream<float16>& out_stream) {
@@ -23,7 +17,7 @@ void load_input(hls::burst_maxi<float16>& in_mem_0,
     in_mem_0.read_request(0, bursts_0);
     in_mem_1.read_request(0, bursts_1);
 
-    // Εναλλαξ read: burst i -> channel (i%2). Output float16 (raw burst).
+    // Εναλλαξ read
     for (int i = 0; i < total_bursts; i++) {
         #pragma HLS PIPELINE II=1
         float16 b = ((i & 1) == 0) ? in_mem_0.read() : in_mem_1.read();
@@ -31,14 +25,7 @@ void load_input(hls::burst_maxi<float16>& in_mem_0,
     }
 }
 
-// -------------------------------------------------------------------------
-// unpack_and_feed: παιρνει float16 bursts και ταιζει τα K lanes.
-//
-//   K=16 (16/K = 1): word_index = i%1 = 0. Νεο burst καθε κυκλο, 16 lanes.
-//                    (ΑΚΡΙΒΩΣ το παλιο working μονοπατι)
-//   K=32 (16/K = 0): word_index θα εσπαγε (i%0). Ξεχωριστο branch:
-//                    2 bursts/vector -> 32 lanes.
-// -------------------------------------------------------------------------
+
 void unpack_and_feed(hls::stream<float16>& in_stream, hls::stream<data_t> out[SODA_K]) {
     #pragma HLS INLINE off
 
