@@ -22,16 +22,27 @@ void architecture_top_level(hls::burst_maxi<float16> A_in_mem_0,
     #pragma HLS ARRAY_PARTITION variable=in_streams complete
     #pragma HLS ARRAY_PARTITION variable=out_streams complete
 
-    hls::stream<float16> pack_in_stream("pack_in_stream");
     hls::stream<float_pack> pack_stream("pack_stream");
     
     #pragma HLS STREAM variable=in_streams depth=8      //8
     #pragma HLS STREAM variable=out_streams depth=8     //2
-    #pragma HLS STREAM variable=pack_in_stream depth=512  //2
     #pragma HLS STREAM variable=pack_stream depth=512   //336
     
+    #if SODA_K <= 16
+    // K<=16: ενα float16 intermediate stream
+    hls::stream<float16> pack_in_stream("pack_in_stream");
+    #pragma HLS STREAM variable=pack_in_stream depth=512
     load_input(A_in_mem_0, A_in_mem_1, pack_in_stream);
     unpack_and_feed(pack_in_stream, in_streams);
+#else
+    // K=32: ΔΥΟ float16 streams (ενα ανα channel, παραλληλα)
+    hls::stream<float16> s0("s0"), s1("s1");
+    #pragma HLS STREAM variable=s0 depth=512
+    #pragma HLS STREAM variable=s1 depth=512
+    load_input(A_in_mem_0, A_in_mem_1, s0, s1);
+    unpack_and_feed(s0, s1, in_streams);
+#endif
+ 
     soda_compute<SODA_K, TOTAL_ITERATIONS>(in_streams, out_streams);
     filter_and_pack(out_streams, pack_stream);
     store_output(pack_stream, B_out_mem_0, B_out_mem_1);
