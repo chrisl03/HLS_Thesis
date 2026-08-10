@@ -7,11 +7,13 @@
 //reads serially from 2 hbms with float16 output (0 even 1 odd)
 #if SODA_K <= 16 
 //  K<=16: one float16 stream, εναλλαξ read 
+//Κ=16-> 1 burst=1 veector and K=8-> 1 burst=2 vectors
 void load_input(hls::burst_maxi<float16>& in_mem_0,
                 hls::burst_maxi<float16>& in_mem_1,
                 hls::stream<float16>& out_stream) {
     #pragma HLS INLINE off
-    const int total_bursts = TOTAL_VECTORS * BURSTS_PER_VEC;
+    // total 512-bit bursts = pixels / 16 (changed bcs previously for K=8 that was 0)
+    const int total_bursts = (SODA_ROWS * SODA_COLS) / 16;
     const int bursts_0 = (total_bursts + 1) / 2;
     const int bursts_1 = total_bursts / 2;
     in_mem_0.read_request(0, bursts_0);
@@ -56,7 +58,7 @@ void load_input(hls::burst_maxi<float16>& in_mem_0,
     in_mem_1.read_request(0, TOTAL_VECTORS);
     for (int i = 0; i < TOTAL_VECTORS; i++) {
         #pragma HLS PIPELINE II=1
-        s0.write(in_mem_0.read());  
+        s0.write(in_mem_0.read());   // 2 bursts in 1 cycle
         s1.write(in_mem_1.read());
     }
 }

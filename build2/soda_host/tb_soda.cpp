@@ -1,8 +1,7 @@
 //  tb_soda.cpp  (parametric K=16 / K=32, 2R+2W)
 //  Packing χειριζεται και τις 2 περιπτωσεις μεσω BURSTS_PER_VEC.
 
-#include "host_soda_fpga.h"
-#include "host_visible.h"
+#include "host_soda_fpga.h"   // τραβάει host_visible.h -> SODA_K, BURSTS_PER_VEC, TOTAL_VECTORS
 #include <iostream>
 #include <vector>
 #include <cstdlib>
@@ -69,16 +68,21 @@ int main(int argc, char** argv) {
     std::cout << "[TB] Packing (K=" << SODA_K << ", BURSTS_PER_VEC="
               << BURSTS_PER_VEC << ")...\n";
 
-    for (int v = 0; v < TOTAL_VECTORS; v++) {
-        if (BURSTS_PER_VEC == 1) {
-            // K=16: ενα burst (16 floats) = ενα vector, εναλλαξ channel
-            float* dst = ((v & 1) == 0) ? A0 : A1;
-            int pos = v / 2;
+    if (SODA_K <= 16) {
+        // K<=16: packing ΑΝΑ BURST (16 floats), εναλλαξ channel.
+        //   Δουλευει για K=16 (burst=1 vector) ΚΑΙ K=8 (burst=2 vectors),
+        //   γιατι το load_input διαβαζει bursts (16 floats) εναλλαξ.
+        const int total_bursts = SODA_TOTAL_PIXELS / 16;
+        for (int b = 0; b < total_bursts; b++) {
+            float* dst = ((b & 1) == 0) ? A0 : A1;
+            int pos = b / 2;
             for (int j = 0; j < 16; j++)
-                dst[pos * 16 + j] = A_flat[v * 16 + j];
-        } else {
-            // K=32: vector v = floats [v*32 .. v*32+31]
-            //   channel0[v] = floats 0..15,  channel1[v] = floats 16..31
+                dst[pos * 16 + j] = A_flat[b * 16 + j];
+        }
+    } else {
+        // K=32: vector v = floats [v*32 .. v*32+31]
+        //   channel0[v] = floats 0..15,  channel1[v] = floats 16..31
+        for (int v = 0; v < TOTAL_VECTORS; v++) {
             for (int j = 0; j < 16; j++) {
                 A0[v * 16 + j] = A_flat[v * 32 + j];
                 A1[v * 16 + j] = A_flat[v * 32 + 16 + j];

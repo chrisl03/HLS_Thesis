@@ -34,14 +34,18 @@ int main() {
     float_pack* B_out_0 = new float_pack[packets_0 > 0 ? packets_0 : 1];
     float_pack* B_out_1 = new float_pack[packets_1 > 0 ? packets_1 : 1];
 
-    // --- PACKING (K=16 εναλλαξ / K=32 split) ---
-    for (int v = 0; v < TOTAL_VECTORS; v++) {
-        if (BURSTS_PER_VEC == 1) {
+    // --- PACKING (K<=16 εναλλαξ ανα BURST / K=32 split) ---
+    if (SODA_K <= 16) {
+        // ανα BURST (16 floats), εναλλαξ channel - δουλευει K=8 ΚΑΙ K=16
+        const int total_bursts = SODA_TOTAL_PIXELS / 16;
+        for (int b = 0; b < total_bursts; b++) {
             float16 tmp;
-            for (int j = 0; j < 16; j++) tmp[j] = A_flat[v * 16 + j];
-            if ((v & 1) == 0) A_in_0[v / 2] = tmp;
-            else              A_in_1[v / 2] = tmp;
-        } else {
+            for (int j = 0; j < 16; j++) tmp[j] = A_flat[b * 16 + j];
+            if ((b & 1) == 0) A_in_0[b / 2] = tmp;
+            else              A_in_1[b / 2] = tmp;
+        }
+    } else {
+        for (int v = 0; v < TOTAL_VECTORS; v++) {
             float16 t0, t1;
             for (int j = 0; j < 16; j++) {
                 t0[j] = A_flat[v * 32 + j];
