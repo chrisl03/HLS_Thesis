@@ -1,145 +1,121 @@
-//  store_from_fifos.hpp
+// store_from_fifos.hpp  (K=64, 8 write channels, paired interleaved)
 #ifndef STORE_FROM_FIFOS_HPP
 #define STORE_FROM_FIFOS_HPP
 
 #include "soda_common.h"
 
-void filter_and_pack(hls::stream<data_t> in[SODA_K], hls::stream<float_pack>& out_stream) {
+// collect_and_split: K lanes -> 8 write streams (paired interleaved)
+void collect_and_split(hls::stream<data_t> in[SODA_K],
+    hls::stream<float16>& ws0,
+    hls::stream<float16>& ws1,
+    hls::stream<float16>& ws2,
+    hls::stream<float16>& ws3,
+    hls::stream<float16>& ws4,
+    hls::stream<float16>& ws5,
+    hls::stream<float16>& ws6,
+    hls::stream<float16>& ws7) {
     #pragma HLS INLINE off
-    data_t buffer[SODA_K];
-    #pragma HLS ARRAY_PARTITION variable=buffer complete
-    for(int i = 0; i < SODA_K; i++) buffer[i] = 0.0f;
-
-    int buf_count = 0;
-    bool done = false;
-    int dummy_count = 0;
-
     for (int i = 0; i < TOTAL_ITERATIONS; i++) {
         #pragma HLS PIPELINE II=1
-
-        data_t curr_val[SODA_K];
-        #pragma HLS ARRAY_PARTITION variable=curr_val complete
-        for (int k_idx = 0; k_idx < SODA_K; k_idx++) {
+        data_t v[SODA_K];
+        #pragma HLS ARRAY_PARTITION variable=v complete
+        for (int k = 0; k < SODA_K; k++) {
             #pragma HLS UNROLL
-            curr_val[k_idx] = in[k_idx].read();
+            v[k] = in[k].read();
         }
-
         int true_cycle = i - SODA_DELAY;
-
-        // writing buffer to buff in and then using it, because without it I had error
-        data_t buf_in[SODA_K];
-        #pragma HLS ARRAY_PARTITION variable=buf_in complete
-        for (int j = 0; j < SODA_K; j++) {
-            #pragma HLS UNROLL
-            buf_in[j] = buffer[j];
-        }
-        int bc = buf_count; 
-
         if (true_cycle >= 0 && true_cycle < TOTAL_VECTORS) {
-            int row = true_cycle / VECTORS_PER_ROW;
-            int col_cycle = true_cycle % VECTORS_PER_ROW;
-
-            if (row >= 1 && row < SODA_ROWS - 1) {
-                int start_idx = (col_cycle == 0) ? 1 : 0;
-                int valid_count = (col_cycle == 0 || col_cycle == VECTORS_PER_ROW - 1) ? SODA_K - 1 : SODA_K;
-
-                data_t valid_pixels[SODA_K];
-                #pragma HLS ARRAY_PARTITION variable=valid_pixels complete
-                for(int j = 0; j < SODA_K; j++) {
-                    #pragma HLS UNROLL
-                    valid_pixels[j] = (j < valid_count) ? curr_val[start_idx + j] : 0.0f;
-                }
-
-                int new_total = bc + valid_count;
-
-                if (new_total >= SODA_K) {
-                    float_pack pack;
-                    for (int j = 0; j < SODA_K; j++) {
+            if ((true_cycle & 1) == 0) {
+                // αρτιο vector -> even channels
+                {
+                    float16 chunk;
+                    for (int j = 0; j < 16; j++) {
                         #pragma HLS UNROLL
-                        data_t sel = buf_in[j];
-                        for (int b = 0; b < SODA_K; b++) {
-                            #pragma HLS UNROLL
-                            if (bc == b) {
-                                sel = (j < b) ? buf_in[j] : valid_pixels[j - b];
-                            }
-                        }
-                        pack[j] = sel;
+                        chunk[j] = v[0 + j];
                     }
-                    out_stream.write(pack);
-
-                    int next_buf_count = new_total - SODA_K;
-                    for (int j = 0; j < SODA_K; j++) {
-                        #pragma HLS UNROLL
-                        data_t nv = 0.0f;
-                        for (int b = 0; b < SODA_K; b++) {
-                            #pragma HLS UNROLL
-                            if (bc == b) {
-                                int vidx = SODA_K + j - b;  
-                                if (vidx >= 0 && vidx < SODA_K && vidx < valid_count) {
-                                    nv = valid_pixels[vidx];
-                                }
-                            }
-                        }
-                        buffer[j] = nv;
-                    }
-                    buf_count = next_buf_count;
-
-                } else {
-                    for (int j = 0; j < SODA_K; j++) {
-                        #pragma HLS UNROLL
-                        data_t nv = buf_in[j];
-                        for (int b = 0; b < SODA_K; b++) {
-                            #pragma HLS UNROLL
-                            if (bc == b) {
-                                if (j >= b && (j - b) < valid_count) {
-                                    nv = valid_pixels[j - b];
-                                }
-                            }
-                        }
-                        buffer[j] = nv;
-                    }
-                    buf_count = new_total;
+                    ws0.write(chunk);  // pair 0 even
                 }
-
-                if (row == SODA_ROWS - 2 && col_cycle == VECTORS_PER_ROW - 1) done = true;
-            }
-        }
-        else {
-            if (done && dummy_count < 16) {
-                float_pack dummy_pack;
-                for (int j = 0; j < SODA_K; j++) {
-                    #pragma HLS UNROLL
-                    dummy_pack[j] = (dummy_count == 0 && j < bc) ? buf_in[j] : 0.0f;
+                {
+                    float16 chunk;
+                    for (int j = 0; j < 16; j++) {
+                        #pragma HLS UNROLL
+                        chunk[j] = v[16 + j];
+                    }
+                    ws2.write(chunk);  // pair 2 even
                 }
-                if (dummy_count == 0) buf_count = 0;
-                out_stream.write(dummy_pack);
-                dummy_count++;
+                {
+                    float16 chunk;
+                    for (int j = 0; j < 16; j++) {
+                        #pragma HLS UNROLL
+                        chunk[j] = v[32 + j];
+                    }
+                    ws4.write(chunk);  // pair 4 even
+                }
+                {
+                    float16 chunk;
+                    for (int j = 0; j < 16; j++) {
+                        #pragma HLS UNROLL
+                        chunk[j] = v[48 + j];
+                    }
+                    ws6.write(chunk);  // pair 6 even
+                }
+            } else {
+                // περιττο vector -> odd channels
+                {
+                    float16 chunk;
+                    for (int j = 0; j < 16; j++) {
+                        #pragma HLS UNROLL
+                        chunk[j] = v[0 + j];
+                    }
+                    ws1.write(chunk);  // pair 1 odd
+                }
+                {
+                    float16 chunk;
+                    for (int j = 0; j < 16; j++) {
+                        #pragma HLS UNROLL
+                        chunk[j] = v[16 + j];
+                    }
+                    ws3.write(chunk);  // pair 3 odd
+                }
+                {
+                    float16 chunk;
+                    for (int j = 0; j < 16; j++) {
+                        #pragma HLS UNROLL
+                        chunk[j] = v[32 + j];
+                    }
+                    ws5.write(chunk);  // pair 5 odd
+                }
+                {
+                    float16 chunk;
+                    for (int j = 0; j < 16; j++) {
+                        #pragma HLS UNROLL
+                        chunk[j] = v[48 + j];
+                    }
+                    ws7.write(chunk);  // pair 7 odd
+                }
             }
         }
     }
 }
-void store_output(hls::stream<float_pack>& in_stream,
-                  hls::burst_maxi<float_pack>& out_mem_0,
-                  hls::burst_maxi<float_pack>& out_mem_1) {
+
+// even: BURSTS_PER_CH_EVEN, odd: _ODD
+void write_channel_even(hls::stream<float16>& s, hls::burst_maxi<float16>& out_mem) {
     #pragma HLS INLINE off
-    int packets_0 = (SODA_TOTAL_PACKETS_OUT + 1) / 2;
-    int packets_1 = SODA_TOTAL_PACKETS_OUT / 2;
-
-    out_mem_0.write_request(0, packets_0);
-    out_mem_1.write_request(0, packets_1);
-
-    for (int i = 0; i < SODA_TOTAL_PACKETS_OUT; i++) {
+    out_mem.write_request(0, BURSTS_PER_CH_EVEN);
+    for (int i = 0; i < BURSTS_PER_CH_EVEN; i++) {
         #pragma HLS PIPELINE II=1
-        float_pack val = in_stream.read();
-        if ((i & 1) == 0) {
-            out_mem_0.write(val);   // άρτιο -> channel 0
-        } else {
-            out_mem_1.write(val);   // περιττό -> channel 1
-        }
+        out_mem.write(s.read());
     }
-
-    out_mem_0.write_response();
-    out_mem_1.write_response();
+    out_mem.write_response();
+}
+void write_channel_odd(hls::stream<float16>& s, hls::burst_maxi<float16>& out_mem) {
+    #pragma HLS INLINE off
+    out_mem.write_request(0, BURSTS_PER_CH_ODD);
+    for (int i = 0; i < BURSTS_PER_CH_ODD; i++) {
+        #pragma HLS PIPELINE II=1
+        out_mem.write(s.read());
+    }
+    out_mem.write_response();
 }
 
 #endif // STORE_FROM_FIFOS_HPP

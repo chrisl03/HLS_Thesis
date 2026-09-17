@@ -1,18 +1,42 @@
-//  soda_top.cpp
+//  soda_top.cpp  (K=64, 8 read + 8 write channels, paired interleaved)
 #include "soda_common.h"
 #include "load_to_fifos.hpp"
 #include "soda_kernel.hpp"
 #include "store_from_fifos.hpp"
 
-// TOP LEVEL
-void architecture_top_level(hls::burst_maxi<float16> A_in_mem_0,
-                            hls::burst_maxi<float16> A_in_mem_1,
-                            hls::burst_maxi<float_pack> B_out_mem_0,
-                            hls::burst_maxi<float_pack> B_out_mem_1) {
-    #pragma HLS INTERFACE m_axi port=A_in_mem_0 bundle=gmem0 max_read_burst_length=256 num_read_outstanding=16 depth=SODA_BURSTS_IN_0
-    #pragma HLS INTERFACE m_axi port=A_in_mem_1 bundle=gmem1 max_read_burst_length=256 num_read_outstanding=16 depth=SODA_BURSTS_IN_1
-    #pragma HLS INTERFACE m_axi port=B_out_mem_0 bundle=gmem2 max_write_burst_length=256 num_write_outstanding=16 depth=SODA_PACKETS_OUT_0
-    #pragma HLS INTERFACE m_axi port=B_out_mem_1 bundle=gmem3 max_write_burst_length=256 num_write_outstanding=16 depth=SODA_PACKETS_OUT_1
+void architecture_top_level(
+    hls::burst_maxi<float16> A_in_mem_0,
+    hls::burst_maxi<float16> A_in_mem_1,
+    hls::burst_maxi<float16> A_in_mem_2,
+    hls::burst_maxi<float16> A_in_mem_3,
+    hls::burst_maxi<float16> A_in_mem_4,
+    hls::burst_maxi<float16> A_in_mem_5,
+    hls::burst_maxi<float16> A_in_mem_6,
+    hls::burst_maxi<float16> A_in_mem_7,
+    hls::burst_maxi<float16> B_out_mem_0,
+    hls::burst_maxi<float16> B_out_mem_1,
+    hls::burst_maxi<float16> B_out_mem_2,
+    hls::burst_maxi<float16> B_out_mem_3,
+    hls::burst_maxi<float16> B_out_mem_4,
+    hls::burst_maxi<float16> B_out_mem_5,
+    hls::burst_maxi<float16> B_out_mem_6,
+    hls::burst_maxi<float16> B_out_mem_7) {
+    #pragma HLS INTERFACE m_axi port=A_in_mem_0 bundle=gmemr0 max_read_burst_length=64 num_read_outstanding=8 depth=BURSTS_PER_CH_EVEN
+    #pragma HLS INTERFACE m_axi port=A_in_mem_1 bundle=gmemr1 max_read_burst_length=64 num_read_outstanding=8 depth=BURSTS_PER_CH_EVEN
+    #pragma HLS INTERFACE m_axi port=A_in_mem_2 bundle=gmemr2 max_read_burst_length=64 num_read_outstanding=8 depth=BURSTS_PER_CH_EVEN
+    #pragma HLS INTERFACE m_axi port=A_in_mem_3 bundle=gmemr3 max_read_burst_length=64 num_read_outstanding=8 depth=BURSTS_PER_CH_EVEN
+    #pragma HLS INTERFACE m_axi port=A_in_mem_4 bundle=gmemr4 max_read_burst_length=64 num_read_outstanding=8 depth=BURSTS_PER_CH_EVEN
+    #pragma HLS INTERFACE m_axi port=A_in_mem_5 bundle=gmemr5 max_read_burst_length=64 num_read_outstanding=8 depth=BURSTS_PER_CH_EVEN
+    #pragma HLS INTERFACE m_axi port=A_in_mem_6 bundle=gmemr6 max_read_burst_length=64 num_read_outstanding=8 depth=BURSTS_PER_CH_EVEN
+    #pragma HLS INTERFACE m_axi port=A_in_mem_7 bundle=gmemr7 max_read_burst_length=64 num_read_outstanding=8 depth=BURSTS_PER_CH_EVEN
+    #pragma HLS INTERFACE m_axi port=B_out_mem_0 bundle=gmemw0 max_write_burst_length=64 num_write_outstanding=8 depth=BURSTS_PER_CH_EVEN
+    #pragma HLS INTERFACE m_axi port=B_out_mem_1 bundle=gmemw1 max_write_burst_length=64 num_write_outstanding=8 depth=BURSTS_PER_CH_EVEN
+    #pragma HLS INTERFACE m_axi port=B_out_mem_2 bundle=gmemw2 max_write_burst_length=64 num_write_outstanding=8 depth=BURSTS_PER_CH_EVEN
+    #pragma HLS INTERFACE m_axi port=B_out_mem_3 bundle=gmemw3 max_write_burst_length=64 num_write_outstanding=8 depth=BURSTS_PER_CH_EVEN
+    #pragma HLS INTERFACE m_axi port=B_out_mem_4 bundle=gmemw4 max_write_burst_length=64 num_write_outstanding=8 depth=BURSTS_PER_CH_EVEN
+    #pragma HLS INTERFACE m_axi port=B_out_mem_5 bundle=gmemw5 max_write_burst_length=64 num_write_outstanding=8 depth=BURSTS_PER_CH_EVEN
+    #pragma HLS INTERFACE m_axi port=B_out_mem_6 bundle=gmemw6 max_write_burst_length=64 num_write_outstanding=8 depth=BURSTS_PER_CH_EVEN
+    #pragma HLS INTERFACE m_axi port=B_out_mem_7 bundle=gmemw7 max_write_burst_length=64 num_write_outstanding=8 depth=BURSTS_PER_CH_EVEN
     #pragma HLS INTERFACE s_axilite port=return
 
     #pragma HLS DATAFLOW
@@ -21,29 +45,71 @@ void architecture_top_level(hls::burst_maxi<float16> A_in_mem_0,
     hls::stream<data_t> out_streams[SODA_K];
     #pragma HLS ARRAY_PARTITION variable=in_streams complete
     #pragma HLS ARRAY_PARTITION variable=out_streams complete
+    #pragma HLS STREAM variable=in_streams depth=8
+    #pragma HLS STREAM variable=out_streams depth=8
 
-    hls::stream<float_pack> pack_stream("pack_stream");
-    
-    #pragma HLS STREAM variable=in_streams depth=8      //8
-    #pragma HLS STREAM variable=out_streams depth=8     //2
-    #pragma HLS STREAM variable=pack_stream depth=512   //336
-    
-    #if SODA_K <= 16
-    // K<=16: ενα float16 intermediate stream
-    hls::stream<float16> pack_in_stream("pack_in_stream");
-    #pragma HLS STREAM variable=pack_in_stream depth=512
-    load_input(A_in_mem_0, A_in_mem_1, pack_in_stream);
-    unpack_and_feed(pack_in_stream, in_streams);
-#else
-    // K=32: ΔΥΟ float16 streams (ενα ανα channel, παραλληλα)
-    hls::stream<float16> s0("s0"), s1("s1");
-    #pragma HLS STREAM variable=s0 depth=512
-    #pragma HLS STREAM variable=s1 depth=512
-    load_input(A_in_mem_0, A_in_mem_1, s0, s1);
-    unpack_and_feed(s0, s1, in_streams);
-#endif
- 
+    // read streams
+    hls::stream<float16> s0("s0");
+    hls::stream<float16> s1("s1");
+    hls::stream<float16> s2("s2");
+    hls::stream<float16> s3("s3");
+    hls::stream<float16> s4("s4");
+    hls::stream<float16> s5("s5");
+    hls::stream<float16> s6("s6");
+    hls::stream<float16> s7("s7");
+    #pragma HLS STREAM variable=s0 depth=8
+    #pragma HLS STREAM variable=s1 depth=8
+    #pragma HLS STREAM variable=s2 depth=8
+    #pragma HLS STREAM variable=s3 depth=8
+    #pragma HLS STREAM variable=s4 depth=8
+    #pragma HLS STREAM variable=s5 depth=8
+    #pragma HLS STREAM variable=s6 depth=8
+    #pragma HLS STREAM variable=s7 depth=8
+
+    // write streams
+    hls::stream<float16> ws0("ws0");
+    hls::stream<float16> ws1("ws1");
+    hls::stream<float16> ws2("ws2");
+    hls::stream<float16> ws3("ws3");
+    hls::stream<float16> ws4("ws4");
+    hls::stream<float16> ws5("ws5");
+    hls::stream<float16> ws6("ws6");
+    hls::stream<float16> ws7("ws7");
+    #pragma HLS STREAM variable=ws0 depth=4
+    #pragma HLS STREAM variable=ws1 depth=4
+    #pragma HLS STREAM variable=ws2 depth=4
+    #pragma HLS STREAM variable=ws3 depth=4
+    #pragma HLS STREAM variable=ws4 depth=4
+    #pragma HLS STREAM variable=ws5 depth=4
+    #pragma HLS STREAM variable=ws6 depth=4
+    #pragma HLS STREAM variable=ws7 depth=4
+
+    // 8 parallel read processes (paired)
+    read_channel_even(A_in_mem_0, s0);
+    read_channel_odd(A_in_mem_1, s1);
+    read_channel_even(A_in_mem_2, s2);
+    read_channel_odd(A_in_mem_3, s3);
+    read_channel_even(A_in_mem_4, s4);
+    read_channel_odd(A_in_mem_5, s5);
+    read_channel_even(A_in_mem_6, s6);
+    read_channel_odd(A_in_mem_7, s7);
+
+    // unpack: 8 streams -> 64 lanes
+    unpack_and_feed(s0, s1, s2, s3, s4, s5, s6, s7, in_streams);
+
+    // compute (64 PEs)
     soda_compute<SODA_K, TOTAL_ITERATIONS>(in_streams, out_streams);
-    filter_and_pack(out_streams, pack_stream);
-    store_output(pack_stream, B_out_mem_0, B_out_mem_1);
+
+    // collect + split -> 8 write streams (paired)
+    collect_and_split(out_streams, ws0, ws1, ws2, ws3, ws4, ws5, ws6, ws7);
+
+    // 8 parallel write processes (paired)
+    write_channel_even(ws0, B_out_mem_0);
+    write_channel_odd(ws1, B_out_mem_1);
+    write_channel_even(ws2, B_out_mem_2);
+    write_channel_odd(ws3, B_out_mem_3);
+    write_channel_even(ws4, B_out_mem_4);
+    write_channel_odd(ws5, B_out_mem_5);
+    write_channel_even(ws6, B_out_mem_6);
+    write_channel_odd(ws7, B_out_mem_7);
 }

@@ -1,32 +1,29 @@
-// host_visible.h
+// host_visible.h  (K=64, 8 read + 8 write channels, paired interleaved)
 #ifndef HOST_VISIBLE_H
 #define HOST_VISIBLE_H
 
-// Helper macros
 #define MIN(a, b)  ((a) < (b) ? (a) : (b))
 #define MAX(a, b)  ((a) > (b) ? (a) : (b))
 #define CEIL_DIV(X, Y) (((X) + (Y) - 1) / (Y))
 
-// basic params
-#define SODA_K 8
+#define SODA_K 64
 #define SODA_ROWS 1024
 #define SODA_COLS 1024
 
-// derived parameters 
+#define NUM_READ_CH  8
+#define NUM_WRITE_CH 8
+#define NUM_PAIRS    4        // 8 channels / 2 = 4 pairs
+
 #define SODA_TOTAL_PIXELS (SODA_ROWS * SODA_COLS)
 #define SODA_KERNEL_ROWS (SODA_ROWS - 2)
 #define SODA_KERNEL_COLS (SODA_COLS - 2)
 #define SODA_KERNEL_ITER (SODA_KERNEL_ROWS * SODA_KERNEL_COLS)
 
-// amt of bursts of 16 floats - buffer sizes
-#define SODA_BURSTS_IN CEIL_DIV(SODA_TOTAL_PIXELS, 16)
-#define SODA_BURSTS_IN_0   ((SODA_BURSTS_IN + 1) / 2)
-#define SODA_BURSTS_IN_1   (SODA_BURSTS_IN / 2)
-#define SODA_PACKETS_OUT_0 ((SODA_TOTAL_PACKETS_OUT + 1) / 2)
-#define SODA_PACKETS_OUT_1 (SODA_TOTAL_PACKETS_OUT / 2)
+// K-wide 
+#define TOTAL_VECTORS (SODA_TOTAL_PIXELS / SODA_K)
 
-#define SODA_TOTAL_PACKETS_OUT ((SODA_KERNEL_ITER / SODA_K) + 16)
-#define BURSTS_PER_VEC (SODA_K / 16)
-#define TOTAL_VECTORS    (SODA_TOTAL_PIXELS / SODA_K)
+// each channel keeps half bursts of the total of its pair
+#define BURSTS_PER_CH_EVEN ((TOTAL_VECTORS + 1) / 2)
+#define BURSTS_PER_CH_ODD  (TOTAL_VECTORS / 2)
 
-#endif //HOST_VISIBLE_H
+#endif // HOST_VISIBLE_H
