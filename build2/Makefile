@@ -1,5 +1,6 @@
 #
-# Project: GEMM on VCK190 base DFX platform
+# SODA 2-SLR build (two kernels: architecture_top_a + architecture_top_b)
+#   Changes vs the single-kernel Makefile are marked with  # <-- 2SLR
 #
 
 SHELL := /bin/bash
@@ -14,162 +15,81 @@ help::
 	@echo "    TARGET     = $(TARGET)"
 	@echo "    HOST_ARCH  = $(HOST_ARCH)"
 	@echo "    DEVICE     = $(DEVICE)"
-	@echo "    KERNEL     = $(KERNEL_NAME)"
-	@echo ""
-	@echo "  This project targets the Alveo U55C platform by default:"
-	@echo "    xilinx_u55c_gen3x16_xdma_3_202210_1"
+	@echo "    KERNELS    = $(KA_NAME) + $(KB_NAME)   -> $(CONTAINER_NAME).xclbin"
 	@echo ""
 	@echo "  Typical U55C commands:"
-	@echo ""
-	@echo "    make all_full"
-	@echo "        Build host executable, compile/link/package the xclbin, and generate emconfig.json."
-	@echo ""
-	@echo "    make all"
-	@echo "        Same as all_full, then run the report target to preserve selected reports/outputs"
-	@echo "        and clean the remaining generated files."
-	@echo ""
-	@echo "    make hls"
-	@echo "        Compile the HLS kernel only and generate the .xo file."
-	@echo "        Does not link the xclbin and does not build the host."
-	@echo ""
-	@echo "    make build"
-	@echo "        Build the FPGA binary container:"
-	@echo "          .xo -> linked xclbin -> packaged xclbin"
-	@echo ""
-	@echo "    make host"
-	@echo "        Build only the x86 XRT host executable."
-	@echo ""
-	@echo "    make run"
-	@echo "        Build everything and run the host application."
-	@echo "        For sw_emu/hw_emu, XCL_EMULATION_MODE is set automatically."
-	@echo "        For TARGET=hw and HOST_ARCH=x86, runs directly on the installed Alveo card."
-	@echo ""
-	@echo "    make test"
-	@echo "        Run the already-built host application."
-	@echo "        Unlike run, this does not rebuild the xclbin."
-	@echo ""
-	@echo "    make emconfig"
-	@echo "        Generate emconfig.json for the selected DEVICE."
-	@echo ""
-	@echo "    make clean"
-	@echo "        Remove temporary build files, logs, emulation files, and generated objects."
-	@echo ""
-	@echo "    make cleanall"
-	@echo "        Remove all generated build directories and packaged outputs."
-	@echo ""
-	@echo "  Common examples:"
-	@echo ""
-	@echo "    make all_full"
-	@echo "    make all_full TARGET=hw HOST_ARCH=x86"
-	@echo "    make run TARGET=sw_emu HOST_ARCH=x86"
-	@echo "    make build TARGET=hw HOST_ARCH=x86"
-	@echo "    make host HOST_ARCH=x86"
-	@echo ""
-	@echo "  Override the platform manually:"
-	@echo ""
-	@echo "    make all_full DEVICE=/opt/xilinx/platforms/xilinx_u55c_gen3x16_xdma_3_202210_1/xilinx_u55c_gen3x16_xdma_3_202210_1.xpfm"
-	@echo ""
-	@echo "  Advanced / optional targets:"
-	@echo ""
-	@echo "    make all_no_hls"
-	@echo "        Reuse an existing .xo file and continue with host/xclbin packaging."
-	@echo "        Fails if the expected .xo does not already exist."
-	@echo ""
-	@echo "    make xclbin"
-	@echo "        Alias for make build."
-	@echo ""
-	@echo "    make report"
-	@echo "        Preserve selected xclbin, host executable, logs, and synthesis/link reports,"
-	@echo "        then clean the rest of the generated files."
-	@echo ""
-	@echo "    make sd_card HOST_ARCH=aarch64"
-	@echo "        Embedded/SoC packaging flow only."
-	@echo "        Not needed for the default U55C x86 PCIe datacenter-card flow."
-	@echo ""
-	@echo "  Useful variables:"
-	@echo ""
-	@echo "    TARGET=<sw_emu|hw_emu|hw>"
-	@echo "    HOST_ARCH=<x86|aarch64>"
-	@echo "    DEVICE=<path/to/platform.xpfm>"
-	@echo "    KERNEL_NAME=<top_function_name>"
-	@echo "    KERNEL_DIR=<kernel_source_directory>"
-	@echo "    HOST_DIR=<host_source_directory>"
-	@echo "    CMD_ARGS=<arguments passed to host executable>"
+	@echo "    make all_full        # host + 2 xo + linked/packaged xclbin + emconfig"
+	@echo "    make hls             # compile BOTH kernels to .xo only"
+	@echo "    make build           # 2 .xo -> linked xclbin -> packaged xclbin"
+	@echo "    make host            # build only the x86 XRT host executable"
+	@echo "    make run             # build everything and run the host"
 	@echo ""
 
 ############################## Project Variables ##############################
 TARGET     ?= hw
-
-# U55C is an Alveo PCIe datacenter card, so default host build is x86.
-# The aarch64 branch is kept for compatibility with embedded/SoC platforms
-# when explicitly requested.
 HOST_ARCH  ?= x86
 
-# Default platform: Alveo U55C on your current server
 PLATFORM_REPO_PATHS ?= /opt/xilinx/platforms
 DEVICE_NAME ?= xilinx_u55c_gen3x16_xdma_3_202210_1
 DEVICE ?= $(PLATFORM_REPO_PATHS)/$(DEVICE_NAME)/$(DEVICE_NAME).xpfm
 
-# These are only needed when HOST_ARCH is not x86.
-# For U55C/x86 they are ignored.
 EDGE_COMMON_SW_PATH ?= /opt/petalinux_files
 EDGE_COMMON_SW ?= ${EDGE_COMMON_SW_PATH}/xilinx-versal-common-v2023.2
-
-# PetaLinux SDK sysroot used only for aarch64 cross-compilation
 SYSROOT_PATH ?= /opt/petalinux/2023.2
 SYSROOT      ?= $(SYSROOT_PATH)/sysroots/cortexa72-cortexa53-xilinx-linux
 
-# Kernel / Host naming
-# IMPORTANT: this must match your unchanged SODA top function name.
-KERNEL_NAME ?= architecture_top_level
+# --- 2SLR: two kernels + one container (xclbin) name ------------------  # <-- 2SLR
+KA_NAME ?= architecture_top_a
+KB_NAME ?= architecture_top_b
+CONTAINER_NAME ?= soda_2slr
+# kept so the report/sd_card targets still resolve (they reference kernel A)
+KERNEL_NAME ?= $(KA_NAME)
 
 KERNEL_DIR  ?= soda_src
 HOST_DIR    ?= soda_host
 
 KERNEL_CFG  ?= hls.cfg
-LINK_CFG    ?= system.cfg
+LINK_CFG    ?= system.cfg          # <-- 2SLR (was system.cfg)
 
-# Sources
-# Keep your SODA source code unchanged.
-KERNEL_SRCS ?= $(KERNEL_DIR)/soda_top.cpp
+# --- 2SLR: one source per kernel --------------------------------------  # <-- 2SLR
+KA_SRC ?= $(KERNEL_DIR)/soda_top_a.cpp
+KB_SRC ?= $(KERNEL_DIR)/soda_top_b.cpp
+
 HOST_SRCS   ?= $(HOST_DIR)/tb_soda.cpp $(HOST_DIR)/host_soda_fpga.cpp
 
-# Output names
 EXECUTABLE  ?= ./soda_host.exe
 
 ifneq ($(HOST_ARCH),$(filter $(HOST_ARCH),x86 aarch64))
 $(error HOST_ARCH must be either x86 or aarch64)
 endif
 
-# Friendly name from device for folder names
 device2xsa = $(strip $(patsubst %.xpfm,%,$(shell basename $(DEVICE))))
 XSA := $(call device2xsa,$(DEVICE))
 
 TEMP_DIR  := ./_x.$(TARGET).$(XSA)
 BUILD_DIR := ./build_dir.$(TARGET).$(XSA)
 
-KERNEL_XO := $(TEMP_DIR)/$(KERNEL_NAME).xo
+# --- 2SLR: two .xo --------------------------------------------------- # <-- 2SLR
+KA_XO := $(TEMP_DIR)/$(KA_NAME).xo
+KB_XO := $(TEMP_DIR)/$(KB_NAME).xo
+KERNEL_XO := $(KA_XO)                 # alias kept for the report target
+
 # Detect DFX platform (rp.xsa exists next to the .xpfm)
 DFX_RP_XSA := $(dir $(DEVICE))/hw/rp.xsa
 
 ifneq ($(wildcard $(DFX_RP_XSA)),)
-  # DFX platforms require link output to be .xsa
-  LINK_OUTPUT := $(BUILD_DIR)/$(KERNEL_NAME).xsa
+  LINK_OUTPUT := $(BUILD_DIR)/$(CONTAINER_NAME).xsa            # <-- 2SLR
 else
-  # Non-DFX platforms typically link to an intermediate .xclbin
-  LINK_OUTPUT := $(BUILD_DIR)/$(KERNEL_NAME).link.xclbin
+  LINK_OUTPUT := $(BUILD_DIR)/$(CONTAINER_NAME).link.xclbin    # <-- 2SLR
 endif
 
-FINAL_XCLBIN := $(BUILD_DIR)/$(KERNEL_NAME).xclbin
-
+FINAL_XCLBIN := $(BUILD_DIR)/$(CONTAINER_NAME).xclbin          # <-- 2SLR
 BINARY_CONTAINERS := $(FINAL_XCLBIN)
 
-# Packaging / run scripts (SoC flow)
 RUN_APP_SCRIPT = ./run_app.sh
 PACKAGE_OUT    = ./package.$(TARGET)
 LAUNCH_EMULATOR = $(PACKAGE_OUT)/launch_$(TARGET).sh
 
-# Default runtime args for host (override if your host expects more)
 CMD_ARGS ?= $(FINAL_XCLBIN)
 
 ############################## Toolchain ##############################
@@ -181,67 +101,46 @@ RMDIR := rm -rf
 
 ############################## Kernel Build Flags ##############################
 VPP_FLAGS += -t $(TARGET) --platform $(DEVICE) --save-temps --optimize 2 --report_level estimate
-
-# Add debug for emulation
 ifneq ($(TARGET), hw)
 VPP_FLAGS += -g
 endif
-
 KERNEL_INC_FLAGS += -I$(KERNEL_DIR)
 
 ############################## Host Build Flags ##############################
 CXXFLAGS += -Wall -O0 -g -std=c++17 -fmessage-length=0
 INC_FLAGS += -I./ -I./$(KERNEL_DIR) -I./$(HOST_DIR)
 
-# x86 vs aarch64 host toolchain setup
 ifeq ($(HOST_ARCH), x86)
-
 CXX ?= g++
-
 check-xrt:
 ifndef XILINX_XRT
 	$(error XILINX_XRT variable is not set. Please set it and rerun.)
 endif
-
-# Typical x86 XRT include/lib
 INC_FLAGS += -I$(XILINX_XRT)/include
 LDFLAGS   += -L$(XILINX_XRT)/lib -lOpenCL -lxrt_coreutil -pthread -lrt -ldl
-
 else  # aarch64
-
 check-xrt:
 ifndef XILINX_VITIS
 	$(error XILINX_VITIS variable is not set. Please set it and rerun.)
 endif
 ifndef EDGE_COMMON_SW
-	$(error EDGE_COMMON_SW variable is not set (e.g. /opt/petalinux_files/xilinx-versal-common-v2023.2).)
+	$(error EDGE_COMMON_SW variable is not set.)
 endif
 ifndef SYSROOT
-	$(error SYSROOT is not set. Expected: /opt/petalinux/2023.2/sysroots/cortexa72-cortexa53-xilinx-linux)
+	$(error SYSROOT is not set.)
 endif
-
-# rootfs/image still come from versal-common
 ROOTFS  := $(EDGE_COMMON_SW)/rootfs.ext4
 IMAGE   := $(EDGE_COMMON_SW)/Image
-
-# IMPORTANT: force cross compiler (do NOT use ?=)
 CXX := $(XILINX_VITIS)/gnu/aarch64/lin/aarch64-linux/bin/aarch64-linux-gnu-g++
-
-# Match the old working host compile behavior
 CXXFLAGS += -std=c++14 -Wno-int-to-pointer-cast --sysroot=$(SYSROOT)
-
-# Make sure xrt/xrt_device.h can be found
 INC_FLAGS += -I$(SYSROOT)/usr/include \
             -I$(SYSROOT)/usr/include/xrt \
             -I$(XILINX_VITIS)/aietools/include \
             -I$(XILINX_VITIS)/include
-
-# Match the old working link line (important if your host uses ADF/XRT APIs)
 LDFLAGS += -ladf_api_xrt -lgcc -lc -lxrt_coreutil -lxilinxopencl \
            -lpthread -lrt -ldl -lcrypt -lstdc++ \
            -L$(SYSROOT)/usr/lib --sysroot=$(SYSROOT) \
            -L$(XILINX_VITIS)/aietools/lib/aarch64.o
-
 endif
 
 ############################## Essential Checks ##############################
@@ -276,9 +175,9 @@ build: check-vitis $(BINARY_CONTAINERS)
 
 xclbin: build
 
-# HLS-only: compile kernel(s) to .xo(s), no link, no package, no host build
-hls: check-vitis check-devices $(KERNEL_XO)
-	@echo "INFO: HLS compile complete -> $(KERNEL_XO)"
+# HLS-only: compile BOTH kernels to .xo                                 # <-- 2SLR
+hls: check-vitis check-devices $(KA_XO) $(KB_XO)
+	@echo "INFO: HLS compile complete -> $(KA_XO) + $(KB_XO)"
 
 ############################## Directory Rules ##############################
 $(TEMP_DIR):
@@ -288,36 +187,31 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
 ############################## Kernel Rules ##############################
-# Rebuild kernel if headers change
 KERNEL_DEPS := $(wildcard $(KERNEL_DIR)/*.h) $(wildcard $(KERNEL_DIR)/*.hpp)
 
 ifeq ($(NO_HLS),1)
-$(KERNEL_XO):
-	@test -f $@ || { \
-		echo "ERROR: Prebuilt kernel object not found: $@"; \
-		echo "Run 'make hls' or 'make all' first."; \
-		exit 1; \
-	}
+$(KA_XO):
+	@test -f $@ || { echo "ERROR: Prebuilt kernel object not found: $@"; echo "Run 'make hls' first."; exit 1; }
+$(KB_XO):
+	@test -f $@ || { echo "ERROR: Prebuilt kernel object not found: $@"; echo "Run 'make hls' first."; exit 1; }
 else
-$(KERNEL_XO): $(KERNEL_SRCS) $(KERNEL_DEPS) | $(TEMP_DIR)
-	$(VPP) $(VPP_FLAGS) -c -k $(KERNEL_NAME) --config $(KERNEL_CFG) --temp_dir $(TEMP_DIR) $(KERNEL_INC_FLAGS) -o $@ $(KERNEL_SRCS)
+# compile each kernel separately into its own .xo                       # <-- 2SLR
+$(KA_XO): $(KA_SRC) $(KERNEL_DEPS) | $(TEMP_DIR)
+	$(VPP) $(VPP_FLAGS) -c -k $(KA_NAME) --config $(KERNEL_CFG) --temp_dir $(TEMP_DIR) $(KERNEL_INC_FLAGS) -o $@ $(KA_SRC)
+$(KB_XO): $(KB_SRC) $(KERNEL_DEPS) | $(TEMP_DIR)
+	$(VPP) $(VPP_FLAGS) -c -k $(KB_NAME) --config $(KERNEL_CFG) --temp_dir $(TEMP_DIR) $(KERNEL_INC_FLAGS) -o $@ $(KB_SRC)
 endif
 
-$(LINK_OUTPUT): $(KERNEL_XO) | $(BUILD_DIR)
-	$(VPP) $(VPP_FLAGS) -l --config $(LINK_CFG) --temp_dir $(TEMP_DIR) $(VPP_LDFLAGS) -o $@ $^
-
-# Keep a stable “final” xclbin name in BUILD_DIR
-# For x86: optionally run v++ -p to create a packaged xclbin (still useful for emu)
-# For aarch64: we still create FINAL_XCLBIN, but packaging happens in sd_card
+# link BOTH .xo into one xclbin using the 2-SLR connectivity cfg        # <-- 2SLR
+$(LINK_OUTPUT): $(KA_XO) $(KB_XO) | $(BUILD_DIR)
+	$(VPP) $(VPP_FLAGS) -l --config $(LINK_CFG) --temp_dir $(TEMP_DIR) $(VPP_LDFLAGS) --profile.trace_memory PLRAM[0] -o $@ $(KA_XO) $(KB_XO)
+	
 $(FINAL_XCLBIN): $(LINK_OUTPUT) | $(BUILD_DIR)
 ifeq ($(HOST_ARCH), x86)
 	$(VPP) -p $< -t $(TARGET) --platform $(DEVICE) --package.out_dir $(PACKAGE_OUT) -o $@
 else
-	# For embedded, keep a plain xclbin in BUILD_DIR for convenience
-	# (the real SD-card package is produced by the sd_card target below)
 	$(VPP) -p $< -t $(TARGET) --platform $(DEVICE) --package.out_dir $(PACKAGE_OUT) -o $@
 endif
-
 
 ############################## Host Rules ##############################
 HOST_OBJS := $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(HOST_SRCS))
@@ -369,7 +263,6 @@ endif
 endif
 
 ############################## SD Card / Packaging ##############################
-# Auto-include data directories if they exist
 SD_DIRS :=
 ifneq ($(wildcard data),)
 SD_DIRS += --package.sd_dir data
@@ -386,7 +279,7 @@ ifneq ($(HOST_ARCH), x86)
 		--package.sd_file xrt.ini \
 		--package.sd_file $(RUN_APP_SCRIPT) \
 		--package.sd_file $(EXECUTABLE) \
-		-o $(KERNEL_NAME).xclbin
+		-o $(CONTAINER_NAME).xclbin
 else
 	@echo "INFO: HOST_ARCH=x86 => skipping embedded sd_card packaging."
 endif
@@ -400,7 +293,7 @@ ifneq ($(HOST_ARCH), x86)
 ifeq ($(TARGET),$(filter $(TARGET),sw_emu hw_emu))
 	$(ECHO) 'export XCL_EMULATION_MODE=$(TARGET)' >> $(RUN_APP_SCRIPT)
 endif
-	$(ECHO) '$(notdir $(EXECUTABLE)) $(KERNEL_NAME).xclbin' >> $(RUN_APP_SCRIPT)
+	$(ECHO) '$(notdir $(EXECUTABLE)) $(CONTAINER_NAME).xclbin' >> $(RUN_APP_SCRIPT)
 	$(ECHO) 'return_code=$$?' >> $(RUN_APP_SCRIPT)
 	$(ECHO) 'if [ $$return_code -ne 0 ]; then' >> $(RUN_APP_SCRIPT)
 	$(ECHO) '  echo "ERROR: host run failed, RC=$$return_code"' >> $(RUN_APP_SCRIPT)
@@ -421,6 +314,8 @@ cleanall: clean
 	-$(RMDIR) run_app.sh run_app.log *.link.xclbin .ipcache
 
 ############################## Report Generation Target ##############################
+# NOTE: report backs up kernel A's HLS reports only (B is identical). Prefer
+#       'make all_full' for the 2-SLR flow; 'make all'/'report' run cleanall.
 .PHONY: report
 report:
 	@echo "========================================================="
@@ -429,30 +324,22 @@ report:
 	@mkdir -p .report_backup/$(TEMP_DIR)/link/int
 	@mkdir -p .report_backup/$(TEMP_DIR)/$(KERNEL_NAME)/$(KERNEL_NAME)/$(KERNEL_NAME)/solution/syn/report
 
-	@# 2) Backup gemm.xclbin (both root and build_dir versions) and gemm_host.exe
-	@cp -a $(KERNEL_NAME).xclbin .report_backup/ 2>/dev/null || true
+	@cp -a $(CONTAINER_NAME).xclbin .report_backup/ 2>/dev/null || true
 	@mkdir -p .report_backup/$(BUILD_DIR)
 	@cp -a $(FINAL_XCLBIN) .report_backup/$(BUILD_DIR)/ 2>/dev/null || true
 	@cp -a $(EXECUTABLE) .report_backup/ 2>/dev/null || true
 
-	@# ---> MINIMAL ADDITIONS START HERE: Save intermediate files to satisfy 'make'
 	@cp -a $(BUILD_DIR)/$(HOST_DIR) .report_backup/$(BUILD_DIR)/ 2>/dev/null || true
 	@cp -a $(LINK_OUTPUT) .report_backup/$(BUILD_DIR)/ 2>/dev/null || true
-	@cp -a $(KERNEL_XO) .report_backup/$(TEMP_DIR)/ 2>/dev/null || true
+	@cp -a $(KA_XO) .report_backup/$(TEMP_DIR)/ 2>/dev/null || true
+	@cp -a $(KB_XO) .report_backup/$(TEMP_DIR)/ 2>/dev/null || true
 	@cp -a $(EMCONFIG_DIR)/emconfig.json .report_backup/$(TEMP_DIR)/ 2>/dev/null || true
-	@# ---> MINIMAL ADDITIONS END HERE
 
-	@# 3) Backup v++_gemm*.log outputs
-	@cp -a v++_$(KERNEL_NAME)*.log .report_backup/ 2>/dev/null || true
-
-	@# 4a & 4b) Backup the entire reports and logs directory in _x...
+	@cp -a v++_$(CONTAINER_NAME)*.log .report_backup/ 2>/dev/null || true
 	@cp -a -r $(TEMP_DIR)/reports .report_backup/$(TEMP_DIR)/ 2>/dev/null || true
 	@cp -a -r $(TEMP_DIR)/logs .report_backup/$(TEMP_DIR)/ 2>/dev/null || true
+	@cp -a $(TEMP_DIR)/link/int/$(CONTAINER_NAME).xclbin.info .report_backup/$(TEMP_DIR)/link/int/ 2>/dev/null || true
 
-	@# 4c) Backup gemm.xclbin.info
-	@cp -a $(TEMP_DIR)/link/int/$(KERNEL_NAME).xclbin.info .report_backup/$(TEMP_DIR)/link/int/ 2>/dev/null || true
-
-	@# 4d) Backup csynth_design_size.rpt and csynth.rpt
 	@cp -a $(TEMP_DIR)/$(KERNEL_NAME)/$(KERNEL_NAME)/$(KERNEL_NAME)/solution/syn/report/csynth_design_size.rpt .report_backup/$(TEMP_DIR)/$(KERNEL_NAME)/$(KERNEL_NAME)/$(KERNEL_NAME)/solution/syn/report/ 2>/dev/null || true
 	@cp -a $(TEMP_DIR)/$(KERNEL_NAME)/$(KERNEL_NAME)/$(KERNEL_NAME)/solution/syn/report/csynth.rpt .report_backup/$(TEMP_DIR)/$(KERNEL_NAME)/$(KERNEL_NAME)/$(KERNEL_NAME)/solution/syn/report/ 2>/dev/null || true
 
@@ -464,18 +351,13 @@ report:
 	@echo "========================================================="
 	@echo " Restoring preserved files..."
 	@echo "========================================================="
-	@# Restore outputs
-	@cp -a .report_backup/$(KERNEL_NAME).xclbin ./ 2>/dev/null || true
+	@cp -a .report_backup/$(CONTAINER_NAME).xclbin ./ 2>/dev/null || true
 	@mkdir -p $(BUILD_DIR)
 	@cp -a .report_backup/$(BUILD_DIR)/* $(BUILD_DIR)/ 2>/dev/null || true
 	@cp -a .report_backup/$(notdir $(EXECUTABLE)) ./ 2>/dev/null || true
-	@cp -a .report_backup/v++_$(KERNEL_NAME)*.log ./ 2>/dev/null || true
-
-	@# Restore reports and nested paths
+	@cp -a .report_backup/v++_$(CONTAINER_NAME)*.log ./ 2>/dev/null || true
 	@mkdir -p $(TEMP_DIR)
 	@cp -a -r .report_backup/$(TEMP_DIR)/* $(TEMP_DIR)/ 2>/dev/null || true
-
-	@# Cleanup the temp backup
 	@rm -rf .report_backup
 	@echo "========================================================="
 	@echo " Report generation and cleanup complete."

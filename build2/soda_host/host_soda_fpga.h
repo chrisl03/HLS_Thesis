@@ -1,4 +1,4 @@
-//  host_soda_fpga.h  (K=64, 8 read + 8 write channels)
+//  host_soda_fpga.h  (2-SLR: two kernels A & B, each 8R+8W, run concurrently)
 #ifndef HOST_SODA_FPGA_H__
 #define HOST_SODA_FPGA_H__
 
@@ -13,75 +13,56 @@
 #include <vector>
 #include <chrono>
 
+// One kernel instance (8 read + 8 write HBM channels).
+struct KernelUnit {
+    xrt::kernel kern;
+    xrt::run    run;
+    xrt::bo     inA[NUM_READ_CH];
+    xrt::bo     outB[NUM_WRITE_CH];
+    float*      inA_ptr[NUM_READ_CH];
+    float*      outB_ptr[NUM_WRITE_CH];
+
+    // per-channel buffer size (even channel count is the max of even/odd)
+    static constexpr std::size_t AIN_ELEMS  = (std::size_t)BURSTS_PER_CH_EVEN * 16;
+    static constexpr std::size_t BOUT_ELEMS = (std::size_t)BURSTS_PER_CH_EVEN * 16;
+
+    void init(xrt::device& dev, const xrt::uuid& uuid, const char* name) {
+        kern = xrt::kernel(dev, uuid, name);
+        for (int i = 0; i < NUM_READ_CH; i++) {
+            inA[i]     = xrt::bo(dev, AIN_ELEMS * sizeof(float), kern.group_id(i));
+            inA_ptr[i] = inA[i].map<float*>();
+        }
+        for (int i = 0; i < NUM_WRITE_CH; i++) {
+            outB[i]     = xrt::bo(dev, BOUT_ELEMS * sizeof(float), kern.group_id(NUM_READ_CH + i));
+            outB_ptr[i] = outB[i].map<float*>();
+        }
+        run = xrt::run(kern);
+        for (int i = 0; i < NUM_READ_CH;  i++) run.set_arg(i, inA[i]);
+        for (int i = 0; i < NUM_WRITE_CH; i++) run.set_arg(NUM_READ_CH + i, outB[i]);
+    }
+    void sync_in()  { for (int i=0;i<NUM_READ_CH;i++)  inA[i].sync(XCL_BO_SYNC_BO_TO_DEVICE); }
+    void sync_out() { for (int i=0;i<NUM_WRITE_CH;i++) outB[i].sync(XCL_BO_SYNC_BO_FROM_DEVICE); }
+};
+
 class FPGA_SODA {
 public:
-    int fpga_init(const std::string& xclbin_path, unsigned int device_index = 0);
+    int  fpga_init(const std::string& xclbin_path, unsigned int device_index = 0);
     void warmup(unsigned int iterations = 1);
-    void run();
+    void run();                       // launches A and B concurrently
     void print_performance_timings() const;
     void save_results_to_csv(const std::string& filename) const;
 
-    float* get_inA0_ptr();
-    float* get_inA1_ptr();
-    float* get_inA2_ptr();
-    float* get_inA3_ptr();
-    float* get_inA4_ptr();
-    float* get_inA5_ptr();
-    float* get_inA6_ptr();
-    float* get_inA7_ptr();
-    float* get_outB0_ptr();
-    float* get_outB1_ptr();
-    float* get_outB2_ptr();
-    float* get_outB3_ptr();
-    float* get_outB4_ptr();
-    float* get_outB5_ptr();
-    float* get_outB6_ptr();
-    float* get_outB7_ptr();
+    // channel pointers for each kernel block
+    float* inA_ptr (int kernel, int ch) { return (kernel==0?A:B).inA_ptr[ch]; }
+    float* outB_ptr(int kernel, int ch) { return (kernel==0?A:B).outB_ptr[ch]; }
 
-    // Καθε channel: BURSTS_PER_CH_EVEN bursts x 16 floats (even channels, το max)
-    static constexpr std::size_t AIN_ELEMS = (std::size_t)BURSTS_PER_CH_EVEN * 16;
-    static constexpr std::size_t BOUT_ELEMS = (std::size_t)BURSTS_PER_CH_EVEN * 16;
+    KernelUnit A;   // kernel 0 -> architecture_top_a (SLR0)
+    KernelUnit B;   // kernel 1 -> architecture_top_b (SLR1)
 
 private:
     xrt::device device;
-    xrt::kernel soda_kernel;
-    xrt::run run_soda;
-
-    xrt::bo inA0_bo;
-    xrt::bo inA1_bo;
-    xrt::bo inA2_bo;
-    xrt::bo inA3_bo;
-    xrt::bo inA4_bo;
-    xrt::bo inA5_bo;
-    xrt::bo inA6_bo;
-    xrt::bo inA7_bo;
-    xrt::bo outB0_bo;
-    xrt::bo outB1_bo;
-    xrt::bo outB2_bo;
-    xrt::bo outB3_bo;
-    xrt::bo outB4_bo;
-    xrt::bo outB5_bo;
-    xrt::bo outB6_bo;
-    xrt::bo outB7_bo;
-    float* inA0_host_ptr;
-    float* inA1_host_ptr;
-    float* inA2_host_ptr;
-    float* inA3_host_ptr;
-    float* inA4_host_ptr;
-    float* inA5_host_ptr;
-    float* inA6_host_ptr;
-    float* inA7_host_ptr;
-    float* outB0_host_ptr;
-    float* outB1_host_ptr;
-    float* outB2_host_ptr;
-    float* outB3_host_ptr;
-    float* outB4_host_ptr;
-    float* outB5_host_ptr;
-    float* outB6_host_ptr;
-    float* outB7_host_ptr;
-
-    std::chrono::duration<double, std::micro> time_program_fpga;
-    std::chrono::duration<double, std::micro> time_allocate_buffers;
+    std::chrono::duration<double, std::micro> time_program_fpga{};
+    std::chrono::duration<double, std::micro> time_allocate_buffers{};
     std::vector<std::chrono::duration<double, std::micro>> warmup_timings;
     std::vector<std::chrono::duration<double, std::micro>> time_copy_input_to_device;
     std::vector<std::chrono::duration<double, std::micro>> time_kernel_execution;

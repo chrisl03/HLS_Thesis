@@ -1,15 +1,15 @@
 open_project -reset hls_project
 
-add_files soda_src/soda_top.cpp -cflags "-std=c++14 -DALLOW_EMPTY_HLS_STREAM_READS"
+add_files soda_src/soda_top_a.cpp -cflags "-std=c++14 -DALLOW_EMPTY_HLS_STREAM_READS"
 add_files -tb soda_src/soda_csim_tb.cpp -cflags "-std=c++14 -DALLOW_EMPTY_HLS_STREAM_READS"
 
-set_top architecture_top_level
+set_top architecture_top_a
 
-open_solution -flow_target vitis -reset "architecture_top_level"
+open_solution -flow_target vitis -reset "architecture_top_a"
 
 set_part {xcu55c-fsvh2892-2L-e}
 
-create_clock -period 4.000 -name default
+create_clock -period 4.44 -name default
 
 config_compile -pipeline_loops 0
 config_interface -m_axi_conservative_mode=0
