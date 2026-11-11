@@ -1,0 +1,54 @@
+# ============ Vitis / Vivado build dirs (δικά σου) ============
+hls_project
+_x.*
+.Xil
+.ipcache
+build_dir.*/
+v++*
+
+# ============ Logs & data dumps (δικά σου) ============
+*.log
+*.csv
+xrt.*
+
+# ============ Python bytecode (ο καταιγισμός .pyc στο codegen/) ============
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# ============ Vitis v++ / packaging artifacts ============
+pfmClocks*.txt
+*.jou
+*.str
+*.info
+*.link_summary
+*.compile_summary
+packaged_kernel_*/
+tmp_kernel_pack_*/
+.run/
+
+# ============ Μεγάλα build outputs (binaries) ============
+*.xo
+*.xclbin
+*.ltx
+*.bit
+*.dcp
+
+# ============ Simulation / waveforms ============
+xsim.dir/
+*.wdb
+*.wcfg
+*.vcd
+*.pb
+*.protoinst
+
+# ============ TAPA ============
+*.tapa/
+work.*/
+
+# ============ Editor / OS ============
+.vscode/
+*.swp
+*.swo
+.DS_Store
