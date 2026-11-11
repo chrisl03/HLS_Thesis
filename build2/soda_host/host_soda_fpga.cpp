@@ -3,6 +3,7 @@
 
 #include <experimental/xrt_xclbin.h>
 #include <iostream>
+#include <unistd.h>
 
 int FPGA_SODA::fpga_init(const std::string& xclbin_path, const unsigned int device_index) {
     using clock = std::chrono::high_resolution_clock;
@@ -82,6 +83,8 @@ void FPGA_SODA::run() {
     run_soda.wait();
     auto end_kernel = clock::now();
     time_kernel_execution.push_back(end_kernel - start_kernel);
+
+    usleep(2000); 
 
     auto start_copy_out = clock::now();
     outB_bo.sync(XCL_BO_SYNC_BO_FROM_DEVICE);

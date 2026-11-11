@@ -1,189 +1,106 @@
-// soda_kernel.hpp
+// soda_kernel.hpp  —  COALESCED reuse buffer (SASA-style) for SODA denoise2d, K=16.
+//
+// Instead of 16 per-lane line buffers + pack/unpack,
+// one 512-bit-wide sliding window (5 word-registers + 2 wide reuse FIFOs of depth VECTORS_PER_ROW).
+//
+// Data stays 512-bit (float16) end-to-end -> no unpack_and_feed, no filter_and_pack.
 #ifndef SODA_KERNEL_HPP
 #define SODA_KERNEL_HPP
 
 #include "soda_common.h"
 
-// Compute modules, exactly same as before
-template <int T_DEPTH, int T_ITER>
-void forwarding_module(hls::stream<data_t>& in, hls::stream<data_t>& out_next_fw, hls::stream<data_t>& out_pe) { 
-    // if depth is 0 make it 1
-    data_t buffer[T_DEPTH == 0 ? 1 : T_DEPTH];
-    static_assert(T_DEPTH >= 1, "forwarding_module requires depth >= 1; use register_forward for depth-1 or split for depth-0");
-    #pragma HLS BIND_STORAGE variable=buffer type=ram_2p impl=bram
-    int ptr = 0;
-    
-    for (int i = 0; i < T_ITER; i++) {
-        #pragma HLS PIPELINE II=1
-        data_t new_val = in.read();
-        data_t out_val = (i < T_DEPTH) ? 0.0f : buffer[ptr]; 
-        
-        out_next_fw.write(out_val);
-        out_pe.write(out_val);
-        
-        buffer[ptr] = new_val;
-        // if ptr is tdepth-1 then make it 0, else increment
-        ptr = (ptr == T_DEPTH - 1) ? 0 : ptr + 1;
-    }
-}
-
-//fw but not used as a FIFO, just a FF
-template <int T_ITER>
-void register_forward(hls::stream<data_t>& in, hls::stream<data_t>& out_next,
-                      hls::stream<data_t>& out_pe) {
-    data_t reg = 0.0f;
-    for (int i = 0; i < T_ITER; i++) {
-        #pragma HLS PIPELINE II=1
-        data_t new_val = in.read();
-        out_next.write(reg);
-        out_pe.write(reg);
-        reg = new_val;
-    }
-}
-
-// New FW module used for all the intermediate PEs (same but writes to 3 different PEs)
-template <int T_DEPTH, int T_ITER>
-void forward_and_split_3(hls::stream<data_t>& in, hls::stream<data_t>& out_next_fw, 
-                         hls::stream<data_t>& pe_center, hls::stream<data_t>& pe_left, hls::stream<data_t>& pe_right) {
-    data_t buffer[T_DEPTH == 0 ? 1 : T_DEPTH];
-    static_assert(T_DEPTH >= 1, "forward_and_split_3 requires depth >= 1");
-    #pragma HLS BIND_STORAGE variable=buffer type=ram_2p impl=bram
-    int ptr = 0;
-
-    for (int i = 0; i < T_ITER; i++) {
-        #pragma HLS PIPELINE II=1
-        data_t new_val = in.read();
-        data_t out_val = (i < T_DEPTH) ? 0.0f : buffer[ptr];
-
-        out_next_fw.write(out_val);
-        pe_center.write(out_val);
-        pe_left.write(out_val);
-        pe_right.write(out_val);
-
-        buffer[ptr] = new_val;
-        ptr = (ptr == T_DEPTH - 1) ? 0 : ptr + 1;
-    }
-}
-
-//terminal module same as regular, but it only writes to one output
-template <int T_DEPTH, int T_ITER>
-void terminal_forwarding_module(hls::stream<data_t>& in, hls::stream<data_t>& out_pe) {
-    data_t buffer[T_DEPTH == 0 ? 1 : T_DEPTH];
-    #pragma HLS BIND_STORAGE variable=buffer type=ram_2p impl=bram
-    int ptr = 0;
-    
-    for (int i = 0; i < T_ITER; i++) {
-        #pragma HLS PIPELINE II=1
-        data_t new_val = in.read();
-        data_t out_val = (i < T_DEPTH) ? 0.0f : buffer[ptr];
-        
-        out_pe.write(out_val);
-        
-        buffer[ptr] = new_val;
-        ptr = (ptr == T_DEPTH - 1) ? 0 : ptr + 1;
-    }
-}
-
-template <int T_ITER>
-void split_1_to_2(hls::stream<data_t>& in, hls::stream<data_t>& out1, hls::stream<data_t>& out2) {
-    for (int i = 0; i < T_ITER; i++) {
-        #pragma HLS PIPELINE II=1
-        data_t val = in.read();
-        out1.write(val);
-        out2.write(val);
-    }
-}
-
-template <int T_ITER>
-void compute_pe(hls::stream<data_t>& in_down, hls::stream<data_t>& in_right,  
-                hls::stream<data_t>& in_center, hls::stream<data_t>& in_left,   
-                hls::stream<data_t>& in_up, hls::stream<data_t>& out_res) {
-    for (int i = 0; i < T_ITER; i++) {
-        #pragma HLS PIPELINE II=1
-        
-        data_t down   = in_down.read();
-        data_t right  = in_right.read();
-        data_t center = in_center.read();
-        data_t left   = in_left.read();
-        data_t up     = in_up.read();
-
-        data_t res_0 = center - left;
-        data_t res_1 = center - right;
-        data_t res_2 = center - up;
-        data_t res_3 = center - down;
-        data_t b_val = (res_0 * res_0) + (res_1 * res_1) +
-                       (res_2 * res_2) + (res_3 * res_3);
-
-        out_res.write(b_val);
-    }
-}
-
-template <int K_FACTOR, int ITER>
-void soda_compute(hls::stream<data_t> A_in[K_FACTOR], hls::stream<data_t> B_out[K_FACTOR]) {
-    #pragma HLS DATAFLOW
-
-    hls::stream<data_t> pe_down[K_FACTOR], pe_right[K_FACTOR], pe_center[K_FACTOR], pe_left[K_FACTOR], pe_up[K_FACTOR];
-
-    #pragma HLS ARRAY_PARTITION variable=pe_down complete
-    #pragma HLS ARRAY_PARTITION variable=pe_right complete
-    #pragma HLS ARRAY_PARTITION variable=pe_center complete
-    #pragma HLS ARRAY_PARTITION variable=pe_left complete
-    #pragma HLS ARRAY_PARTITION variable=pe_up complete
-
-    #pragma HLS STREAM variable=pe_down depth=16
-    #pragma HLS STREAM variable=pe_right depth=8
-    #pragma HLS STREAM variable=pe_center depth=8
-    #pragma HLS STREAM variable=pe_left depth=8
-    #pragma HLS STREAM variable=pe_up depth=8
-
-    hls::stream<data_t> fw1[K_FACTOR], fw2[K_FACTOR], fw3[K_FACTOR], split[K_FACTOR];
-    
-    #pragma HLS ARRAY_PARTITION variable=fw1 complete
-    #pragma HLS ARRAY_PARTITION variable=fw2 complete
-    #pragma HLS ARRAY_PARTITION variable=fw3 complete
-    #pragma HLS ARRAY_PARTITION variable=split complete
-
-    #pragma HLS STREAM variable=fw1 depth=4
-    #pragma HLS STREAM variable=fw2 depth=4
-    #pragma HLS STREAM variable=fw3 depth=4
-    #pragma HLS STREAM variable=split depth=4
-
-    for (int k = 0; k < K_FACTOR; k++) {
+// compute + emit one 512-bit output word
+static inline void emit_word(int row, int col_vec,
+        const float16& w_up, const float16& w_prev, const float16& w_cur,
+        const float16& w_next, const float16& w_down,
+        hls::stream<float_pack>& out) {
+    #pragma HLS INLINE
+    float_pack ob;
+    #pragma HLS ARRAY_PARTITION variable=ob complete
+    for (int i = 0; i < 16; i++) {
         #pragma HLS UNROLL
+        float center = w_cur[i];
+        float up     = w_up[i];
+        float down   = w_down[i];
+        float left   = (i == 0)  ? w_prev[15] : w_cur[i - 1];
+        float right  = (i == 15) ? w_next[0]  : w_cur[i + 1];
+        float r0 = center - left;
+        float r1 = center - right;
+        float r2 = center - up;
+        float r3 = center - down;
+        float val = (r0 * r0) + (r1 * r1) + (r2 * r2) + (r3 * r3);
+        int gcol = col_vec * 16 + i;
+        bool border = (row == 0) || (row == SODA_ROWS - 1) ||
+                      (gcol == 0) || (gcol == SODA_COLS - 1);
+        ob[i] = border ? 0.0f : val;
+    }
+    out.write(ob);
+}
 
-        if (K_FACTOR == 1) {
-            // if k=1, then we dont need any forwarding modules and thats why this is empty
-        }
-        else if (k == 0) {
-            // for first PE
-            register_forward<ITER>(A_in[k], fw1[k], pe_down[k]); ///////////////////////
-            // this one is the right element of the last calculation of previous cycle, thats why there is 1 less delay
-            forwarding_module<VECTORS_PER_ROW - 1, ITER>(fw1[k], fw2[k], pe_right[K_FACTOR - 1]); 
-            register_forward<ITER>(fw2[k], fw3[k], split[k]);
-            split_1_to_2<ITER>(split[k], pe_center[k], pe_left[k+1]);
-            terminal_forwarding_module<VECTORS_PER_ROW, ITER>(fw3[k], pe_up[k]);
-        }
-        else if (k == K_FACTOR - 1) {
-            // for last PE
-            register_forward<ITER>(A_in[k], fw1[k], pe_down[k]);/////////////////////////
-            forwarding_module<VECTORS_PER_ROW, ITER>(fw1[k], fw2[k], split[k]);
-            split_1_to_2<ITER>(split[k], pe_center[k], pe_right[k-1]); 
-            // element to the left of k=0 comes for the previous cycle
-            register_forward<ITER>(fw2[k], fw3[k], pe_left[0]);
-            terminal_forwarding_module<VECTORS_PER_ROW - 1, ITER>(fw3[k], pe_up[k]);
-        }
-        else {
-            // all the intermediate ones. each one feeds symmetrically adjacent PEs in same cycle
-            register_forward<ITER>(A_in[k], fw1[k], pe_down[k]);//////////////////////
-            forward_and_split_3<VECTORS_PER_ROW, ITER>(fw1[k], fw2[k], pe_center[k], pe_left[k+1], pe_right[k-1]);
-            terminal_forwarding_module<VECTORS_PER_ROW, ITER>(fw2[k], pe_up[k]);
-        }
+// one wide PE: reads 512-bit words, keeps a coalesced reuse window, writes 512-bit words
+void soda_compute_coalesced(hls::stream<float16>& in, hls::stream<float_pack>& out) {
+    const int N = TOTAL_VECTORS;      // total 512-bit words
+    const int R = VECTORS_PER_ROW;    // words per row
+
+    float16 zero;
+    #pragma HLS ARRAY_PARTITION variable=zero complete
+    for (int i = 0; i < 16; i++) {
+        #pragma HLS UNROLL
+        zero[i] = 0.0f;
     }
 
-    // all PEs
-    for (int k = 0; k < K_FACTOR; k++) {
-        #pragma HLS UNROLL
-        compute_pe<ITER>(pe_down[k], pe_right[k], pe_center[k], pe_left[k], pe_up[k], B_out[k]);
+    // sliding window of 5 words:  -R (up), -1 (prev), 0 (cur), +1 (next), +R (down)
+    float16 w_up = zero, w_prev = zero, w_cur = zero, w_next = zero, w_down = zero;
+    #pragma HLS ARRAY_PARTITION variable=w_up   complete
+    #pragma HLS ARRAY_PARTITION variable=w_prev complete
+    #pragma HLS ARRAY_PARTITION variable=w_cur  complete
+    #pragma HLS ARRAY_PARTITION variable=w_next complete
+    #pragma HLS ARRAY_PARTITION variable=w_down complete
+
+    // the two WIDE reuse FIFOs (replace the 32 narrow per-lane line buffers)
+    hls::stream<float16, VECTORS_PER_ROW> fifo_up;    // holds offsets -(R-1)..-2
+    hls::stream<float16, VECTORS_PER_ROW> fifo_down;  // holds offsets +2..+(R-1)
+
+    // FIll window
+    //  above row 0 -> stay zero (top border)
+    for (int i = 0; i < R - 2; i++) {   // fill fifo_up with R-2 zeros
+        #pragma HLS PIPELINE II=1
+        fifo_up.write(zero);
+    }
+    w_cur  = in.read();                           // input[0]
+    w_next = in.read();                           // input[1]
+    for (int i = 0; i < R - 2; i++) { // input[2..R-1] -> fill fifo_down
+        #pragma HLS PIPELINE II=1
+        fifo_down.write(in.read());
+    }
+    w_down = in.read();                           // input[R]
+
+    const int V_SPLIT = N - (R + 1);   // Check in inputs ended
+
+    // Moving through stencil
+    for (int v = 0; v < V_SPLIT; v++) {
+        #pragma HLS PIPELINE II=1
+        emit_word(v / R, v % R, w_up, w_prev, w_cur, w_next, w_down, out);
+        w_up   = fifo_up.read();   fifo_up.write(w_prev);
+        w_prev = w_cur;            w_cur = w_next;
+        w_next = fifo_down.read(); fifo_down.write(w_down);
+        w_down = in.read();                       // UNCONDITIONAL
+    }
+    // Pad zeros in last row
+    for (int v = V_SPLIT; v < N; v++) {
+        #pragma HLS PIPELINE II=1
+        emit_word(v / R, v % R, w_up, w_prev, w_cur, w_next, w_down, out);
+        w_up   = fifo_up.read();   fifo_up.write(w_prev);
+        w_prev = w_cur;            w_cur = w_next;
+        w_next = fifo_down.read(); fifo_down.write(w_down);
+        w_down = zero;                            // no read
+    }
+
+    // Flush in the end
+    DRAIN: for (int i = 0; i < R - 2; i++) {
+        #pragma HLS PIPELINE II=1
+        fifo_up.read();
+        fifo_down.read();
     }
 }
 

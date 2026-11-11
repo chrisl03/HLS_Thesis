@@ -21,6 +21,6 @@
 // amt of bursts of 16 floats - buffer sizes
 #define SODA_BURSTS_IN CEIL_DIV(SODA_TOTAL_PIXELS, 16)
 
-#define SODA_TOTAL_PACKETS_OUT ((SODA_KERNEL_ITER / SODA_K) + 16)
+#define SODA_TOTAL_PACKETS_OUT SODA_BURSTS_IN
 
 #endif //HOST_VISIBLE_H

@@ -1,35 +1,24 @@
-//  soda_top.cpp
+//  soda_top.cpp  —  COALESCED version
+//  unpack_and_feed + filter_and_pack REMOVED. Data stays 512-bit end-to-end.
 #include "soda_common.h"
-#include "load_to_fifos.hpp"
-#include "soda_kernel.hpp"
-#include "store_from_fifos.hpp"
+#include "load_to_fifos.hpp"      // only load_input is used now (unpack_and_feed left unused)
+#include "soda_kernel.hpp"        // coalesced soda_compute_coalesced
+#include "store_from_fifos.hpp"   // only store_output is used now (filter_and_pack left unused)
 
 // TOP LEVEL
 void architecture_top_level(hls::burst_maxi<float16> A_in_mem, hls::burst_maxi<float_pack> B_out_mem) {
-    #pragma HLS INTERFACE m_axi port=A_in_mem bundle=gmem0 max_read_burst_length=256 num_read_outstanding=16 depth=SODA_BURSTS_IN
-    #pragma HLS INTERFACE m_axi port=B_out_mem bundle=gmem1 max_write_burst_length=256 num_write_outstanding=16 depth=SODA_TOTAL_PACKETS_OUT
+    #pragma HLS INTERFACE m_axi port=A_in_mem  bundle=gmem0 max_read_burst_length=64  num_read_outstanding=16  depth=SODA_BURSTS_IN
+    #pragma HLS INTERFACE m_axi port=B_out_mem bundle=gmem1 max_write_burst_length=64 num_write_outstanding=16 depth=SODA_TOTAL_PACKETS_OUT
     #pragma HLS INTERFACE s_axilite port=return
 
     #pragma HLS DATAFLOW
 
-    hls::stream<data_t> in_streams[SODA_K];
-    hls::stream<data_t> out_streams[SODA_K];
-    #pragma HLS ARRAY_PARTITION variable=in_streams complete
-    #pragma HLS ARRAY_PARTITION variable=out_streams complete
+    hls::stream<float16>    in_stream("in_stream");
+    hls::stream<float_pack> out_stream("out_stream");
+    #pragma HLS STREAM variable=in_stream  depth=8
+    #pragma HLS STREAM variable=out_stream depth=8
 
-    hls::stream<float16>   pack_in_stream("pack_in_stream");
-    hls::stream<float_pack> pack_stream("pack_stream");
-    
-    #pragma HLS STREAM variable=in_streams depth=8      //8
-    #pragma HLS STREAM variable=out_streams depth=8     //2
-    #pragma HLS STREAM variable=pack_in_stream depth=512  //2
-    #pragma HLS STREAM variable=pack_stream depth=512   //336
-    
-    load_input(A_in_mem, pack_in_stream);
-    unpack_and_feed(pack_in_stream, in_streams);
-
-    soda_compute<SODA_K, TOTAL_ITERATIONS>(in_streams, out_streams);
-
-    filter_and_pack(out_streams, pack_stream);
-    store_output(pack_stream, B_out_mem);
+    load_input(A_in_mem, in_stream);                 // 512-bit words in   (unchanged)
+    soda_compute_coalesced(in_stream, out_stream);   // coalesced reuse + denoise
+    store_output(out_stream, B_out_mem);             // 512-bit words out  (unchanged)
 }
